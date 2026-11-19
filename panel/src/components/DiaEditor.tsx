@@ -1,0 +1,335 @@
+'use client';
+
+/**
+ * Abrir, cerrar o cambiarle el cupo a un día, desde el propio calendario.
+ *
+ * Antes esto era una página aparte, "Fechas hábiles", que mostraba la misma
+ * lista de días con otra cara. Se unió al calendario el 2026-10-21: dos
+ * pantallas con los mismos días obligaban a saber de antemano cuál abrir, y
+ * la decisión de cambiar un cupo se toma mirando la ocupación, que es
+ * justamente lo que muestra el calendario.
+ */
+import { Fragment, useState } from 'react';
+import { limiteSinAprobar } from '@/lib/cupo';
+import { avisar } from './AvisoFlotante';
+import Dialogo from './Dialogo';
+import type { Ocupacion } from '@/lib/tipos';
+import { ESTADO_DIA } from '@/lib/columnas';
+import { enPalabras } from '@/lib/fechas';
+
+const ENTRADA =
+  'w-full rounded border border-hueso/20 bg-tinta px-3 py-2 text-sm ' +
+  'focus:border-oro focus:outline-none';
+
+/**
+ * El valor del cuarto radio, que **no es un estado de la planilla**.
+ *
+ * Un día de preparación no se escribe en `Fechas Hábiles`: se deduce de que
+ * tenga equipo y no reciba público (`esPreparacion()`). Esta opción existe
+ * porque el cliente la pidió desde acá —"se agrega una fecha pública y al
+ * final el encargado dice: ah, y tengo que preparar una fecha"— y lo que
+ * hace es **llevar a planificar el equipo de ese día**, que es lo único que
+ * de verdad lo vuelve de preparación. Si escribiera una fila, habría dos
+ * verdades capaces de contradecirse: un día marcado "preparación" que
+ * después se abre, o al revés.
+ */
+const PREPARACION = 'preparacion';
+
+export default function DiaEditor({
+  dia, cupoNormal, apertura, fechasExistentes = [], onListo, onCancelar,
+  onPreparacion, puedeSubirCupo = true
+}: {
+  /** El día a editar, o `null` para agregar uno que todavía no existe. */
+  dia: Ocupacion | null;
+  cupoNormal: number;
+  apertura: string;
+  /** Las fechas que ya están en la hoja, solo para avisar si se repite una. */
+  fechasExistentes?: string[];
+  onListo: () => void;
+  onCancelar: () => void;
+  /** Llevar a planificar el equipo de esa fecha, sin tocar la planilla. */
+  onPreparacion?: (fecha: string) => void;
+  /**
+   * Si esta cuenta sube el cupo sola (permiso `cupo`: gerente o más
+   * arriba). Si no, subirlo se **pide**: se guarda con el cupo de hoy y el
+   * pedido le llega al gerente a la bandeja (2026-11-12, `lib/cupo.ts`).
+   */
+  puedeSubirCupo?: boolean;
+}) {
+  // Agregar una fecha y editar una existente son la misma ventana a
+  // propósito: los campos son los mismos y la validación también. Lo único
+  // que cambia es si la fecha se elige o viene dada.
+  const nueva = dia === null;
+  const [motivoCupo, setMotivoCupo] = useState('');
+
+  // Un día que todavía no está en la hoja viene con capacidad 0: se propone
+  // el cupo normal, que es lo que se va a querer casi siempre.
+  const sinDefinir = !dia || (dia.capacidad === 0 && !dia.bloqueada);
+  const [f, setF] = useState<{
+    fecha: string; capacidad: string; apertura: string;
+    estado: string; notas: string;
+  }>({
+    fecha: dia?.fecha ?? '',
+    capacidad: String(sinDefinir ? cupoNormal : dia!.capacidad),
+    apertura: apertura,
+    estado: dia?.bloqueada ? ESTADO_DIA.cerrada
+          : dia?.exclusiva ? ESTADO_DIA.exclusiva
+          : dia?.privada ? ESTADO_DIA.privada
+          : ESTADO_DIA.abierta,
+    notas: dia?.notas ?? ''
+  });
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+
+  // Guardar una fecha que ya está en la hoja la REEMPLAZA, no la duplica.
+  // Es lo correcto, pero conviene decirlo antes y no después.
+  const yaEstaba = nueva && f.fecha !== '' && fechasExistentes.includes(f.fecha);
+  // La preparación solo se ofrece al agregar: un día que ya está en la hoja
+  // se vuelve de preparación cerrándolo y asignándole equipo, y ofrecer acá
+  // un atajo a eso sería explicar dos caminos para lo mismo.
+  const ofrecePreparacion = nueva && !!onPreparacion;
+  const esPreparacion = f.estado === PREPARACION;
+  /** Hasta dónde sube el cupo sin pedirlo (`lib/cupo.ts`). */
+  const limite = limiteSinAprobar(dia?.capacidad, cupoNormal);
+  const pideCupo = !puedeSubirCupo && !esPreparacion && Number(f.capacidad) > limite;
+  /**
+   * Privado y exclusivo son **una respuesta con una casilla**, no dos
+   * respuestas a "qué día es".
+   *
+   * Lo que cambia entre los dos no es el tipo de día —los dos son privados,
+   * los dos reciben reservas, ninguno se ofrece en el sitio— sino si el
+   * recinto se arrendó completo. Dos radios lo contarían como dos cosas
+   * distintas y obligarían a leer las dos ayudas para notar que casi todo
+   * es igual; una casilla dice exactamente dónde está la diferencia.
+   *
+   * Y como la casilla solo existe mientras "Privado" está elegido, un día
+   * abierto o cerrado **no tiene cómo quedar marcado exclusivo**: es la
+   * misma garantía por forma que el upgrade de menús del sitio.
+   */
+  const esPrivado = f.estado === ESTADO_DIA.privada || f.estado === ESTADO_DIA.exclusiva;
+  const esExclusivo = f.estado === ESTADO_DIA.exclusiva;
+
+
+  async function guardar(cambios?: Partial<typeof f>) {
+    if (nueva && !f.fecha) return setError('Elige una fecha.');
+    // Preparación no es un estado que se guarde: se sale de acá a asignarle
+    // equipo, y eso es lo que lo vuelve un día de preparación.
+    if (esPreparacion) return onPreparacion!(f.fecha);
+    setGuardando(true);
+    setError('');
+    const capacidad = Number((cambios ?? f).capacidad ?? f.capacidad);
+    // Sin el permiso `cupo`, subirlo se pide: el día se guarda con el cupo
+    // de hoy y el pedido va aparte.
+    const pedir = !puedeSubirCupo && capacidad > limite;
+    const cuerpo = {
+      ...f, ...cambios,
+      fecha: dia?.fecha ?? f.fecha,
+      capacidad: pedir ? limite : capacidad
+    };
+    try {
+      const r = await fetch('/api/fechas', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(cuerpo)
+      });
+      const d = await r.json();
+      if (d.error) { setError(d.error); return; }
+      if (pedir) {
+        const p = await fetch('/api/fechas/cupo', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ fecha: cuerpo.fecha, accion: 'pedir', cupo: capacidad, motivo: motivoCupo })
+        });
+        const dp = await p.json().catch(() => ({}));
+        if (!p.ok || dp.error) { setError(dp.error || 'El día se guardó, pero no se pudo pedir el cupo.'); return; }
+        avisar(`Pedido al encargado de operaciones: subir el cupo a ${capacidad}. Le llega a su bandeja.`);
+      }
+      onListo();
+    } catch (e) {
+      setError(String(e));
+    } finally { setGuardando(false); }
+  }
+
+  return (
+    <Dialogo
+      titulo={nueva ? 'Agregar fecha' : enPalabras(dia!.fecha)}
+      onCerrar={onCancelar}>
+      <>
+        {nueva ? (
+          <p className="mt-2 text-sm text-hueso/60">
+            Para abrir un día que no cae en el horario de siempre: un feriado,
+            una fecha especial o un evento privado. También para anotar un día
+            de preparación, en que no entra nadie y se trabaja igual.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-hueso/60">
+            {dia!.tomadas > 0
+              ? `${dia!.tomadas} personas ya reservaron este día.`
+              : 'Todavía no hay reservas este día.'}
+          </p>
+        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {nueva && (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">
+                Fecha
+              </span>
+              <input type="date" className={ENTRADA} value={f.fecha} autoFocus
+                onChange={(e) => setF({ ...f, fecha: e.target.value })} />
+              {f.fecha && (
+                <span className="mt-1 block text-xs text-hueso/50 first-letter:uppercase">
+                  {enPalabras(f.fecha)}
+                </span>
+              )}
+            </label>
+          )}
+          {!esPreparacion && (
+          <label className="block">
+            <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">
+              Cupo
+            </span>
+            <input type="number" min={0} step={1} className={ENTRADA}
+              value={f.capacidad}
+              onChange={(e) => setF({ ...f, capacidad: e.target.value })} />
+          </label>
+          )}
+          {!esPreparacion && (
+          <label className="block">
+            <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">
+              Hora de apertura
+            </span>
+            <input type="text" className={ENTRADA} value={f.apertura}
+              onChange={(e) => setF({ ...f, apertura: e.target.value })} />
+          </label>
+          )}
+          {!esPreparacion && (
+          <label className="block sm:col-span-2">
+            <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">
+              Nota
+            </span>
+            <input type="text" className={ENTRADA} value={f.notas} placeholder="—"
+              onChange={(e) => setF({ ...f, notas: e.target.value })} />
+            <span className="mt-1 block text-xs text-hueso/50">
+              Se ve en el calendario del panel. El visitante no la ve.
+            </span>
+          </label>
+          )}
+        </div>
+
+        {!esPreparacion && yaEstaba && (
+          <p className="mt-3 rounded border border-ambar/50 bg-ambar/5 p-3 text-sm text-ambar-texto">
+            Esa fecha ya está en la lista. Guardar va a reemplazar su cupo,
+            su hora y su estado por lo que pongas acá.
+          </p>
+        )}
+
+        {!nueva && Number(f.capacidad) > 0 && Number(f.capacidad) < dia!.tomadas && (
+          <p className="mt-3 rounded border border-ambar/50 bg-ambar/5 p-3 text-sm text-ambar-texto">
+            Ese cupo es menor que las {dia!.tomadas} personas que ya reservaron.
+            Se puede guardar igual, pero el día va a quedar sobrevendido.
+          </p>
+        )}
+        {/* **Subir el cupo se pide** (2026-11-12): sin el permiso `cupo`, el
+            día se guarda con el de hoy y el pedido le llega al gerente. */}
+        {pideCupo && (
+          <div className="mt-3 rounded-xl border-2 border-ambar-fuerte/60 bg-ambar/10 p-3">
+            <p className="text-[15px] font-bold text-ambar-texto">
+              🙋 Subir el cupo sobre {limite} lo aprueba el encargado de operaciones
+            </p>
+            <p className="mt-1 text-[14px] text-hueso/85">
+              Se guarda con {limite} y se le pide {Number(f.capacidad)}: le llega a su bandeja.
+            </p>
+            <label className="mt-2 block">
+              <span className="mb-1 block text-[13px] font-semibold text-hueso/70">¿Por qué? (lo ve el encargado de operaciones)</span>
+              <input type="text" className={ENTRADA} value={motivoCupo} placeholder="Viene un grupo de la agencia…"
+                onChange={(e) => setMotivoCupo(e.target.value)} />
+            </label>
+          </div>
+        )}
+        {error && <p className="mt-3 text-sm font-semibold text-rojo-texto">{error}</p>}
+
+        {/* Tres estados y no un interruptor, porque son tres cosas
+            distintas: abierta al público, abierta solo para nosotros, y
+            cerrada. Antes el botón solo alternaba entre la primera y la
+            tercera, y no había forma de tener la del medio.
+
+            La cuarta, preparación, no es un estado de la planilla y no se
+            guarda: lleva a planificar el equipo. Por eso la pregunta dejó de
+            ser "quién puede reservar" —a eso la preparación contestaría
+            "nadie", que no es lo que dice— y pasó a ser qué día es. */}
+        <fieldset className="mt-5">
+          <legend className="mb-2 text-xs uppercase tracking-wide text-hueso/60">
+            Qué día es
+          </legend>
+          <div className="space-y-2">
+            {([
+              [ESTADO_DIA.abierta, 'Abierta al público',
+               'Aparece en el calendario del sitio y cualquiera puede reservar.'],
+              [ESTADO_DIA.privada, 'Privado',
+               'No aparece en el sitio. Para un evento privado o algo vendido aparte: ' +
+               'se ve acá con su cupo y sus reservas, y nadie puede comprar un lugar.'],
+              [ESTADO_DIA.cerrada, 'Cerrada',
+               'No se ofrece ni se atiende. Las reservas que ya hubiera no se borran.'],
+              ...(ofrecePreparacion ? [[PREPARACION, 'Día de preparación',
+                   'No entra nadie y se trabaja igual: montar un matrimonio, dejar ' +
+                   'la carne lista. Se le asigna equipo, y con eso queda.'] as const]
+                : [])
+            ] as const).map(([valor, titulo, ayuda]) => (
+              <Fragment key={valor}>
+                <label className="flex cursor-pointer gap-3">
+                  <input type="radio" name="estado" value={valor} className="mt-1"
+                    // Privado queda elegido con cualquiera de sus dos
+                    // valores; la casilla de abajo decide cuál.
+                    checked={valor === ESTADO_DIA.privada ? esPrivado : f.estado === valor}
+                    onChange={() => setF({ ...f, estado: valor })} />
+                  <span>
+                    <span className="block text-sm">{titulo}</span>
+                    <span className="block text-xs text-hueso/50">{ayuda}</span>
+                  </span>
+                </label>
+                {valor === ESTADO_DIA.privada && esPrivado && (
+                  <label className={'ml-7 flex cursor-pointer gap-3 rounded ' +
+                      'border border-morado-fuerte/40 bg-morado-fuerte/5 p-3'}>
+                    <input type="checkbox" className="mt-1" checked={esExclusivo}
+                      onChange={(e) => setF({ ...f,
+                        estado: e.target.checked ? ESTADO_DIA.exclusiva : ESTADO_DIA.privada })} />
+                    <span>
+                      <span className="block text-sm">
+                        El recinto se arrendó <strong>completo y en exclusiva</strong>
+                      </span>
+                      <span className="block text-xs text-hueso/60">
+                        Márcala solo si ese día <strong>no cabe otro evento</strong>.
+                        Sin marcar, el día es privado pero no exclusivo: pueden correr
+                        dos eventos a la vez, que es lo normal.
+                      </span>
+                    </span>
+                  </label>
+                )}
+              </Fragment>
+            ))}
+          </div>
+        </fieldset>
+
+        {esPreparacion && (
+          <p className="mt-3 rounded border border-oro/40 bg-oro/5 p-3 text-sm text-hueso/70">
+            Un día de preparación <strong>no se agrega al calendario</strong>:
+            se le asigna equipo y con eso queda. No aparece en el sitio, no
+            recibe reservas y no necesita cupo ni hora de apertura.
+          </p>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button onClick={() => guardar()} disabled={guardando}
+            className="boton boton-relleno min-h-[48px] text-[15px] disabled:opacity-40">
+            {guardando ? 'Guardando…'
+              : esPreparacion ? 'Planificar el equipo'
+              : pideCupo ? `Guardar con ${limite} y pedir ${Number(f.capacidad)}`
+              : nueva ? 'Agregar' : 'Guardar'}
+          </button>
+          <span className="flex-1" />
+          <button onClick={onCancelar}
+            className="boton">Cancelar</button>
+        </div>
+      </>
+    </Dialogo>
+  );
+}

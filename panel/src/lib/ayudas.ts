@@ -1,0 +1,945 @@
+/**
+ * Los textos de ayuda del panel, **todos en este archivo**.
+ *
+ * Lo pidió el cliente: *"un sistema de enseñanza interactiva dentro del sitio
+ * para los que lo acceden la primera vez… signo de interrogación, clic,
+ * quiero aprender más y se abre y aprendo más sobre esto"*.
+ *
+ * **Están juntos a propósito.** Si cada pantalla escribiera su propia
+ * explicación dentro de su JSX, corregir el tono o una palabra sería recorrer
+ * doce archivos, y nadie podría leer de una sentada lo que el panel le está
+ * enseñando a la gente. Acá se lee entero y se corrige en un lugar.
+ *
+ * **Cómo están escritos**, que es la parte que importa:
+ *
+ * - **Dicen qué se hace, no qué es.** "Acá se mira cómo viene la ocupación"
+ *   sirve; "esta pantalla muestra una grilla de fechas" no le sirve a nadie.
+ * - **Sin palabras del oficio.** Ni endpoint, ni registro, ni sincronizar.
+ *   Quien abre esto es alguien que está aprendiendo a usar un panel por
+ *   primera vez, muchas veces con el teléfono en la mano.
+ * - **Cortos.** Tres párrafos y unos pasos. Una ayuda larga no se lee, y una
+ *   que no se lee es peor que ninguna porque ocupa el lugar de la buena.
+ * - **No inventan datos del negocio.** Ningún precio, ningún horario, ninguna
+ *   capacidad: eso sale de la planilla y cambia. Acá se explica el panel.
+ */
+
+export interface Ayuda {
+  /** El título de la ventana. */
+  titulo: string;
+  /** Un párrafo por elemento. */
+  cuerpo: string[];
+  /** "Cómo se usa", en pasos numerados. Opcional. */
+  pasos?: string[];
+  /** La advertencia que conviene leer antes de tocar algo. Opcional. */
+  ojo?: string;
+}
+
+export const AYUDAS: Record<string, Ayuda> = {
+  calendario: {
+    titulo: 'El calendario de reservas',
+    cuerpo: [
+      'Acá se ve cómo viene cada día que recibe público: cuánta gente hay '
+      + 'reservada, cuánto cupo queda y qué menús pidieron.',
+      'El punto de color y la palabra que va debajo dicen en qué está ese '
+      + 'día: público es un día normal abierto en el sitio, privado es un '
+      + 'día tomado por un evento, cerrado es un día que no recibe gente, y '
+      + 'sin cupo es un día al que todavía nadie le puso cuántas personas '
+      + 'caben.'
+    ],
+    pasos: [
+      'Apreta la fecha de un día para ver quiénes vienen.',
+      'Apreta Equipo al pie de la tarjeta para planificar quién trabaja: la '
+      + 'tarjeta se da vuelta y muestra el resumen.',
+      'Agregar reserva anota a alguien que llamó o escribió por WhatsApp.',
+      'Enviar planilla semanal copia un link que se manda al grupo. Ese link '
+      + 'no muestra plata ni nombres de clientes.',
+      'Estadísticas (operaciones, pagos, gerencia y administración) abre los '
+      + 'números de las reservas en grandes rasgos: cuántas, no-shows, plata '
+      + 'y de dónde vienen.',
+      'Si haces los pagos, arriba te llega lo que tienes que revisar: los '
+      + 'pagos que alguien anotó a mano, los descuentos ya aplicados y las '
+      + 'cuentas o tarifas que cambió otro. Ya rigen; los cierras con ✓ '
+      + 'Revisado, ✓ Visto o ✓ Confirmar.'
+    ],
+    ojo: 'Abrir un día acá lo pone en el sitio para recibir reservas. '
+       + 'Planificar equipo, en cambio, no abre nada.'
+  },
+
+  dia: {
+    titulo: 'El día completo',
+    cuerpo: [
+      'Todo lo de una fecha en una pantalla: quiénes reservaron, quién '
+      + 'trabaja y qué actividades extras hay contratadas.',
+      'En la lista de reservas, el círculo de cada una dice cómo va el pago; '
+      + 'ábrela con “+” para ver qué compró, cómo ingresarla en Fudo y su '
+      + 'contacto. 💬 WhatsApp abre el chat directo, con el saludo ya escrito y '
+      + 'firmado por ti.',
+      'El teléfono y el correo de una reserva los ve quien la atiende: la '
+      + 'administración, el encargado de turno de hoy en adelante y el vendedor '
+      + 'solo en las suyas. Si te llega con 🔒 y tapado (···· 5678), pídeselo a '
+      + 'quien la anotó.'
+    ],
+    pasos: [
+      'La columna Asistencia dice quién vino; se marca en Turnos.',
+      'Editar abre la reserva para corregir un teléfono, un menú o el estado '
+      + 'del pago. Marcarla Pagada o Abonada le avisa al encargado de pagos, '
+      + 'que la revisa.',
+      'La mesa, en cada reserva abierta: quién se sumó en el día —con su menú '
+      + 'o a la carta— y el valor final de la cuenta en Fudo. Se anota desde la '
+      + 'hora de apertura. Arriba, Las mesas suma los valores finales del día y '
+      + 'dice cuántas mesas faltan, para compararlo con Fudo.',
+      'Equipo y cuentas del día abre la ventana donde se escriben los montos '
+      + 'y la propina.'
+    ],
+    ojo: 'El día se cierra en Turnos, no acá.'
+  },
+
+  turnos: {
+    titulo: 'El calendario del equipo',
+    cuerpo: [
+      'El mes completo, día por día, para asignar gente a cualquier fecha — '
+      + 'incluidos los días que no reciben público, como un montaje o una '
+      + 'preparación.',
+      'Si un día tiene equipo asignado y no recibe gente, el panel lo llama '
+      + 'día de preparación. No hay que marcarlo: se deduce solo.',
+      'Arriba aparecen los días que ya pasaron y a los que les falta algo '
+      + 'para poder cerrarse. Entrar acá es que la pantalla te diga qué '
+      + 'queda pendiente.',
+      'En cada día del mes, la pastilla 👥 dice cuánta gente hay en el equipo.'
+    ],
+    pasos: [
+      'Apreta cualquier día del mes para abrir su ventana.',
+      'Elige a cada persona en el puesto que le toca.',
+      'Marca Vino o No vino de cada una.',
+      'Escribe la jornada, los ajustes y la propina del día.',
+      'Cerrar el día pregunta antes y muestra lo que estás declarando: '
+      + 'quién vino, la propina, las actividades extras. Queda anotado con tu '
+      + 'nombre y la hora, y desde ahí el día queda en solo lectura.',
+      'Si un día cerrado tiene un error, el administrador o quien hace los '
+      + 'pagos aprieta Corregir este día, arregla lo que haga falta y lo '
+      + 'guarda con el motivo. El día sigue cerrado.'
+    ],
+    ojo: 'Planificar un día cerrado no lo abre al público: los turnos no '
+       + 'tocan lo que ve el sitio.'
+  },
+
+  equipo: {
+    titulo: 'La lista del equipo',
+    cuerpo: [
+      'Quiénes trabajan, en qué puesto y cómo se les paga. Cada persona es '
+      + 'una línea; se aprieta y se abre su ficha completa.',
+      'El link personal es una dirección que se le manda a cada uno por '
+      + 'WhatsApp. Le muestra sus propios turnos y nada más: no ve reservas, '
+      + 'ni a los demás, ni lo que gana nadie.'
+    ],
+    pasos: [
+      'Apreta la línea de una persona para ver y corregir su ficha.',
+      'Desactivar la saca del planificador y le cierra su link, pero conserva '
+      + 'todos sus turnos pasados.',
+      'Si cambias la cuenta bancaria o lo que se le paga a alguien y no haces '
+      + 'los pagos, queda por confirmar hasta que el encargado de pagos lo mire.',
+      'Administrar puestos abre la lista de puestos, donde también se ordenan '
+      + 'con las flechas.'
+    ],
+    ojo: 'A quien ya trabajó alguna vez se le desactiva, no se le quita: sus '
+       + 'turnos son el registro de quién trabajó qué día.'
+  },
+
+  /**
+   * El `?` que va al lado del botón del link, dentro de la ficha.
+   *
+   * No es la ayuda de una pantalla sino la de un botón, y es el único caso:
+   * la pregunta —*¿qué va a ver esta persona cuando lo abra?*— se hace justo
+   * antes de mandarlo por WhatsApp, y la respuesta decide si se manda.
+   */
+  link: {
+    titulo: 'El link personal',
+    cuerpo: [
+      'Es una dirección propia de esa persona. Se la mandas por WhatsApp, '
+      + 'ella la aprieta y ve su página. No pide contraseña ni correo.',
+      'Lo que ve: sus próximos turnos —qué día, desde qué hora, en qué '
+      + 'puesto, cuánta gente se espera y qué menús hay que preparar— y sus '
+      + 'últimos 30 días con el detalle de lo que se le pagó cada uno: la '
+      + 'jornada, las horas extra, los ajustes con su motivo y su parte de '
+      + 'la propina.',
+      'Lo que no ve: reservas, nombres de clientes, a los demás trabajadores '
+      + 'ni lo que gana nadie más.'
+    ],
+    pasos: [
+      'Crear link personal se lo genera y te lo copia. Pégalo en su WhatsApp.',
+      'Copiar link personal vuelve a copiar el mismo, por si lo perdió.',
+      'Renovar crea uno nuevo y deja el anterior inservible al instante: es '
+      + 'lo que hay que hacer si alguien pierde el teléfono.'
+    ],
+    ojo: 'Quien tenga el link ve esa página, así que es de una sola persona '
+       + 'y no se manda al grupo. Desactivarla también se lo cierra.'
+  },
+
+  extras: {
+    titulo: 'Las actividades extras',
+    cuerpo: [
+      'Lo que se contrata aparte del equipo y por día: los jinetes, las '
+      + 'pintacaritas, el castillo inflable.',
+      'Van separadas del equipo porque no son lo mismo: no cobran una '
+      + 'jornada, no entran en el reparto de la propina, y no aparecen en la '
+      + 'planilla que se le manda al grupo.',
+      'Se juntan en un solo lugar: la planilla que descarga quien paga, donde '
+      + 'cada fila dice si es equipo o actividad extra.',
+      'En cada día del mes, la pastilla 🎠 dice cuántas actividades hay y la '
+      + 'de al lado, cuánto cuestan.'
+    ],
+    pasos: [
+      'Apreta un día del mes para agendar a quien venga.',
+      'Marca Vino o No vino cuando ya pasó el día.',
+      'Abajo, la lista de colaboradores guarda a los que se repiten, con su '
+      + 'monto habitual y su cuenta. Si cambias una cuenta o un monto y no '
+      + 'haces los pagos, queda por confirmar hasta que el encargado de pagos '
+      + 'lo mire.'
+    ],
+    ojo: 'Una actividad sin confirmar no suma: agendar no es pagar.'
+  },
+
+  presupuestos: {
+    titulo: 'Las cotizaciones',
+    cuerpo: [
+      'Acá se cotiza para un cliente —una agencia, un matrimonio, una '
+      + 'empresa— y se le manda por un link. El calendario muestra cuántos '
+      + 'candidatos y cotizaciones tiene cada día.',
+      'Lo cotizado NO ocupa cupo. Recién al marcarla ganada se vuelve una '
+      + 'reserva, y desde ahí la reserva se actualiza sola si cambias la '
+      + 'cotización.',
+      'Un candidato es alguien que preguntó: se anota con cliente, fecha e '
+      + 'invitados, y se cotiza después.',
+      '📋 Lista muestra todas las cotizaciones con sus números: cuántas siguen '
+      + 'en carrera, cuánto hay cotizado, cuánto se ganó, la tasa de cierre, las '
+      + 'que esperan que alguien las siga y lo que falta cobrar. Se filtra por '
+      + 'periodo —por fecha del evento o por fecha en que se cotizó—, por estado '
+      + 'y con el buscador; la gerencia, además, por vendedor o por socio.'
+    ],
+    pasos: [
+      '“+ Cotizar” (o “Cotizar este día” en una tarjeta).',
+      'Cliente: búscalo o créalo. Evento: fecha —o “todavía no hay día”—, '
+      + 'invitados y tipo.',
+      'Productos: agrégalos con los botones. Cada línea tiene su precio y su '
+      + 'descuento; abajo va el descuento sobre el total y el IVA.',
+      'Envío: en qué va, documento, condiciones de pago y los pagos; desde ahí '
+      + 'se manda por WhatsApp o correo. Contrato: sus datos y condiciones, y '
+      + 'se manda igual. Si el cliente '
+      + 'acepta, “Ver el contrato”, imprímelo y fírmenlo en dos ejemplares.',
+      'Sube la foto o el PDF del contrato firmado, anota el anticipo y '
+      + '“Marcar ganada”.'
+    ],
+    ojo: 'En un día público el show ecuestre va incluido y no se puede '
+       + 'quitar. Para ofrecer otra opción al mismo cliente usa “Hacer una '
+       + 'alternativa”: cuando una gana, las otras pasan solas a “No elegida”.'
+  },
+
+  informe: {
+    titulo: 'El informe para pagar',
+    cuerpo: [
+      'Por cada persona del periodo: cuántos días vino, cuánto suman sus '
+      + 'jornadas, sus horas extra, sus ajustes y su total.',
+      'Lo importante es el botón de descargar. El archivo trae el detalle día '
+      + 'por día con el motivo de cada ajuste, y las cuentas bancarias, así '
+      + 'que se puede pasar directo a la transferencia sin copiar nada a '
+      + 'mano.'
+    ],
+    pasos: [
+      'Abre en la semana pasada, que es la que se paga. Puedes elegir otra '
+      + 'semana, el mes, o dos fechas sueltas.',
+      'Mira arriba si quedan turnos sin cerrar: mientras los haya, el total '
+      + 'está incompleto.',
+      'En la línea de cada persona están los botones para copiar su sueldo y '
+      + 'su propina: copian la cuenta y el monto para pegarlos en el banco.',
+      'Si una línea dice ⚠ Por confirmar, alguien que no hace los pagos cambió '
+      + 'su cuenta o su tarifa: revísala antes de transferir y aprieta ✓ '
+      + 'Confirmar.',
+      'Aprieta la línea para abrirla. Si pagaste todo, aprieta Pagado '
+      + 'completo; si fue una parte, Pago parcial. Ahí también marcas la '
+      + 'boleta cuando llegue.',
+      'Para una transferencia masiva, arriba está su tarjeta: baja la '
+      + 'planilla de sueldos o de propinas, súbela al banco, y cuando esté '
+      + 'pagada aprieta Todos pagados.',
+      'Descarga la planilla: trae si cada pago tiene boleta.'
+    ],
+    ojo: 'El sueldo y la propina se pagan en dos transferencias. La propina '
+       + 'tampoco se suma al costo del equipo: esa plata no sale del negocio, '
+       + 'pasa por él.'
+  },
+
+  menus: {
+    titulo: 'Los productos',
+    cuerpo: [
+      'Todo lo que se vende: los menús del sitio y lo que se cotiza, como la '
+      + 'once, el desayuno, el show ecuestre o el arriendo. Un solo catálogo '
+      + 'para que lo cotizado y lo reservado se llamen igual.',
+      'Cada producto dice si se vende en el sitio y en las reservas, y si se '
+      + 'puede cotizar. Los precios de reserva valen para las reservas anotadas '
+      + 'a mano; el precio de cotización es el que propone una cotización, y '
+      + 'ahí se puede cambiar.',
+      'En una reserva comprada por el sitio manda lo que cobró la tienda, no '
+      + 'esto: el total viene con el pedido.'
+    ],
+    ojo: 'Si acá aparece un menú en amarillo es que alguna reserva usa un '
+       + 'nombre que no está en esta lista, y conviene revisarlo.'
+  },
+
+  clientes: {
+    titulo: 'Los clientes',
+    cuerpo: [
+      'Una ficha por cliente, con su nombre, cómo contactarlo y, cuando haga '
+      + 'falta para el contrato, su RUT y domicilio.',
+      'Se escribe una vez: las cotizaciones apuntan a la ficha en vez de '
+      + 'copiar los datos. Si corriges un teléfono acá, queda corregido para '
+      + 'todas sus cotizaciones.',
+      'Si eres vendedor, ves el contacto, el RUT y el domicilio de tus '
+      + 'clientes —los que creaste o a los que les cotizaste—. De los de otro '
+      + 'vendedor ves el nombre y el teléfono tapado, con 🔒, y no se editan.'
+    ],
+    pasos: [
+      'Busca primero: por nombre, empresa, teléfono, correo o RUT.',
+      'Si no está, aprieta “+ Nuevo cliente”. Si ya hay uno con ese teléfono, '
+      + 'correo o RUT, el panel te pregunta si es el mismo.',
+      'Para cambiar algo, abre la ficha con “+” y corrige: se guarda solo. El '
+      + 'nombre se confirma con su botón.'
+    ],
+    ojo: 'Una ficha con cotizaciones no se puede borrar.'
+  },
+
+  configuracion: {
+    titulo: 'La configuración',
+    cuerpo: [
+      'Está ordenada por secciones, con un botón arriba para saltar a cada '
+      + 'una: las reservas del sitio, el calendario del panel, las '
+      + 'cotizaciones, el contrato, los datos de la empresa y la mantención.',
+      'Reservas del sitio es lo que ven los clientes: qué días se abre, '
+      + 'cuánta gente cabe y hasta cuándo se puede reservar. Esos días se '
+      + 'abren solos cada mañana, públicos y con el cupo normal; uno que ya '
+      + 'está en el calendario, cerrado o con otro cupo, no se toca. Cotizaciones y '
+      + 'Contrato son lo que propone cada cotización nueva y lo que dice el '
+      + 'contrato que se imprime.',
+      'En Mantención, el administrador tiene además «Dejar la base en cero»: '
+      + 'borra lo que fueron pruebas —reservas, cotizaciones, clientes, pagos, '
+      + 'turnos y la bitácora— y conserva el equipo, las cuentas, los productos '
+      + 'y la configuración. Pide antes una copia de la planilla y escribir BORRAR. '
+      + 'Al terminar, vuelve a abrir solos los días que se abre.'
+    ],
+    ojo: 'Esto cambia lo que ve el público. Un día suelto se abre o se cierra '
+       + 'desde el calendario, sin tocar esta pantalla.'
+  },
+
+  estadisticas: {
+    titulo: 'Las estadísticas de reservas',
+    cuerpo: [
+      'Los números de las reservas en grandes rasgos, para mirar: cuántas, '
+      + 'si vinieron, cuánta plata y de dónde vienen. Acá no se cambia nada.',
+      'Arriba eliges el periodo —un día, una semana, un mes o dos fechas— y '
+      + 'por qué fecha se cuenta: la de la visita o la del día en que se '
+      + 'reservó. Todo · Visitas · Eventos separa las reservas de Shopify y '
+      + 'las anotadas a mano de los eventos que vienen de una cotización, que '
+      + 'son grandes y mueven los promedios.',
+      'Cada número se compara con el periodo anterior: un mes con el mes '
+      + 'anterior, una semana con la semana anterior. Las tasas se comparan en '
+      + 'puntos. El signo de pregunta de cada número dice cómo se calcula.'
+    ],
+    ojo: 'El no-show depende de que la recepción marque Vino o No vino, y la '
+       + 'cuenta final, de que la mesa anote su valor final. Lo que no se anotó '
+       + 'no cuenta, y la tarjeta lo dice.'
+  },
+
+  cuentas: {
+    titulo: 'Las cuentas del panel',
+    cuerpo: [
+      'Quiénes pueden entrar y con qué rol. Una cuenta por persona: así la '
+      + 'bitácora dice quién hizo qué.',
+      'Qué puede cada rol se ve bajo el rol elegido, y el detalle en su signo de pregunta. '
+      + 'Sale de la misma tabla de permisos que usa el panel, así que siempre '
+      + 'está al día.',
+      'Un trabajador no entra acá: su acceso es su link personal.'
+    ],
+    ojo: 'Es mejor desactivar una cuenta que borrarla: así sus líneas de la '
+       + 'bitácora siguen diciendo quién hizo qué. Un cambio de rol vale cuando '
+       + 'la persona sale y vuelve a entrar.'
+  },
+
+  bitacora: {
+    titulo: 'La bitácora',
+    cuerpo: [
+      'Quién hizo qué y cuándo. Sirve para preguntarle a la persona que '
+      + 'corresponde, no para deshacer un cambio.',
+      'Las horas son de Chile.'
+    ]
+  },
+
+  // Las dos que faltaban para que cada pantalla del menú tenga la suya
+  // (2026-11-12): la ayuda por rol arma un paso por pantalla desde acá.
+  recepcion: {
+    titulo: 'La recepción',
+    cuerpo: [
+      'La pantalla de la entrada: solo las reservas de hoy, en grande, para '
+      + 'recibir a la gente con un tablet o el celular en la mano.',
+      'Al apretar Llegó te pregunta si llegaron todos. Si llegaron menos, lo '
+      + 'cuentas con − y +: eso no cambia la reserva, le avisa al jefe de turno. '
+      + 'Si llegaron más, te pregunta qué come cada uno —un menú o a la carta— '
+      + 'y se suman a la mesa.',
+      'Al abrir una reserva que llegó está su mesa: Agregar a la mesa, para '
+      + 'alguien que llegó después, y el valor final, que es el total de la '
+      + 'cuenta en Fudo con lo ya pagado incluido. Las bebidas y lo de la carta '
+      + 'no se anotan uno por uno: basta el total.'
+    ],
+    pasos: [
+      'Busca la reserva por nombre.',
+      'Aprieta Llegó o No vino: están a la vista en cada reserva. Una ya '
+      + 'marcada dice qué quedó; Cambiar vuelve a ofrecer los dos botones.',
+      'El círculo de cada reserva dice cómo viene el pago (✓ ya pagó, $ se '
+      + 'cobra, ½ abonó, ! ojo). Con + la abres: cómo ingresarla en Fudo y '
+      + 'Avisar al jefe de turno, para todo lo demás —personas, menús, pago, un '
+      + 'pedido especial—.'
+    ],
+    ojo: 'Antes de la hora de apertura, o con el día cerrado, los botones no '
+       + 'aparecen.'
+  },
+
+  vendedores: {
+    titulo: 'Las ventas y lo que se le paga a cada vendedor',
+    cuerpo: [
+      'Por cada vendedor: lo que ganó en el periodo —comisiones de las '
+      + 'cotizaciones que ganó y su sueldo fijo—, lo que ya se le pagó y lo que '
+      + 'falta.',
+      'La comisión cuenta cuando el cliente terminó de pagar el evento y el '
+      + 'encargado de pagos revisó esos cobros. Una cotización cancelada no deja '
+      + 'comisión.'
+    ],
+    pasos: [
+      'Elige mes o semana y muévete con las flechas.',
+      'Los azulejos de arriba dicen cuánto toca, cuánto se pagó y cuánto falta.',
+      'Abajo está el detalle de cada venta.'
+    ]
+  },
+
+  asistencia: {
+    titulo: 'Marcar quién vino',
+    cuerpo: [
+      'Mientras nadie marque, esa persona queda en sin marcar y no suma nada: '
+      + 'el panel no la da por venida ni da por pagada su jornada.',
+      'Apretar el botón que ya está marcado lo desmarca, que es la forma de '
+      + 'volver a "no sé todavía".'
+    ],
+    ojo: 'Un día no se puede cerrar mientras quede alguien sin marcar, '
+       + 'porque el total quedaría mal.'
+  }
+};
+
+/** Un paso del recorrido de bienvenida. */
+export interface Paso {
+  titulo: string;
+  cuerpo: string[];
+  /** La pantalla de la que habla, para poder ir a verla. */
+  ir?: { texto: string; url: string };
+}
+
+// El recorrido de bienvenida son las misiones de `/ayuda` (`lib/misiones.ts`).
+
+
+/**
+ * **Las ayudas chicas**: el `?` que va al lado de un campo o de un botón
+ * (`AyudaCorta.tsx`), no de una pantalla entera.
+ *
+ * Lo pidió el cliente (2026-11-11): *"mejor un signo de interrogación más y
+ * que explica esta sección específica en corto que solo un gran signo de
+ * interrogación arriba y tengo que leer todo el chorizo"*. Por eso cada una
+ * es **una sola cosa, en dos o tres frases**, y dice lo que pasa al tocarla
+ * —qué cambia, qué no, quién la puede tocar—, que es lo que se pregunta
+ * justo antes de apretar.
+ *
+ * Las mismas reglas que las de arriba, más una: **si una frase corta bajo el
+ * campo ya lo dice, no va un `?`**. Un `?` que repite lo que está a la vista
+ * enseña a no apretarlos.
+ *
+ * Los roles no están acá: su explicación sale de la tabla de permisos
+ * (`roles.ts`), para que no pueda quedar vieja.
+ */
+export interface AyudaCorta {
+  titulo: string;
+  /** Dos o tres frases, una por elemento. */
+  texto: string[];
+}
+
+export const AYUDAS_CORTAS: Record<string, AyudaCorta> = {
+  // ---------- La ventana de cotizar ----------
+  alternativas: {
+    titulo: 'Alternativas',
+    texto: [
+      'Son versiones de la misma cotización para el mismo cliente: otro menú, otro precio, otro día. Cada una tiene su letra y su total.',
+      'Se mandan todas juntas en un solo link. Cuando el cliente decide, eliges "Se quedó con esta": las otras pasan a "No elegida" y el link muestra solo la elegida.',
+      'Antes de ganarla o de mandar el contrato hay que elegir. En el calendario cuentan una sola vez.'
+    ]
+  },
+  sinFecha: {
+    titulo: 'Sin día exacto',
+    texto: [
+      'Para cuando el cliente dice "marzo o abril". La cotización queda en la vista Sin fecha y no aparece en ningún día.',
+      'Para marcarla ganada hay que ponerle la fecha.'
+    ]
+  },
+  agregarProducto: {
+    titulo: 'Agregar productos',
+    texto: [
+      'Aparecen los productos marcados "Se puede cotizar" en Productos, con el precio que proponen.',
+      'Cada producto va una sola vez: ya agregado, su botón dice "ya está" y la cantidad se cambia en su línea.',
+      'El precio se cambia en la línea: es parte de la negociación. "Otra línea" es para algo que no está en el catálogo.'
+    ]
+  },
+  precioLinea: {
+    titulo: 'Con IVA o + IVA',
+    texto: [
+      'Con IVA: el precio ya trae el IVA adentro. + IVA: el IVA se suma encima.',
+      'Lo dice el catálogo de cada producto. Abajo, las cuentas muestran siempre neto, IVA y total.'
+    ]
+  },
+  descuentoLinea: {
+    titulo: 'Descuento de la línea',
+    texto: [
+      'Rebaja solo esta línea. Se puede usar junto con el descuento sobre el total: primero se aplica el de la línea y después el del total.',
+      'Los porcentajes de los botones se cambian en Configuración.'
+    ]
+  },
+  ufCotizacion: {
+    titulo: 'La UF de la cotización',
+    texto: [
+      'Queda fija desde que se agregó el primer producto en UF, para que la cifra que recibió el cliente no cambie sola.',
+      '"Usar la UF de hoy" la actualiza y cambia los precios en pesos: úsalo solo si vas a mandar la cotización de nuevo.'
+    ]
+  },
+  descuentoTotal: {
+    titulo: 'Descuento sobre el total',
+    texto: [
+      'Rebaja la cotización completa, encima de los descuentos de cada línea.',
+      'Sale en la hoja del cliente, en el contrato y en el monto de la reserva al ganarla.'
+    ]
+  },
+  vistaGerencia: {
+    titulo: 'Vista gerencia',
+    texto: [
+      'Se suma a cualquier rol: la persona ve todo el panel —calendario, reservas, informe, bitácora, cotizaciones, equipo con sus sueldos, configuración—.',
+      'Edita solo lo de su rol. En las pantallas que solo mira, arriba le aparece "acá solo miras".',
+      'No ve las cuentas, las contraseñas ni los links personales. Vale desde la próxima vez que entre.'
+    ]
+  },
+  estadoCotizacion: {
+    titulo: 'En qué va',
+    texto: [
+      'El camino de arriba dice en qué va. Avanza con lo que haces: "Sí, la mandé" la deja Enviada, "Marcar ganada" crea la reserva.',
+      '"Están negociando" y "Se perdió…" son para ordenarte y para los avisos. Una perdida se puede volver a abrir.',
+      'Con varias alternativas vale para todas: van en un solo link y es una sola conversación.'
+    ]
+  },
+  documento: {
+    titulo: 'Documento de la venta',
+    texto: [
+      'Sin documento, boleta o factura. Por ahora no cambia el precio.',
+      'Con factura pide los datos de facturación, que quedan guardados en la ficha del cliente.'
+    ]
+  },
+  condicionesPago: {
+    titulo: 'Condiciones de pago',
+    texto: [
+      'En blanco vale lo de Configuración; lo que escribas acá vale solo para esta cotización. Un 0 en el anticipo es "sin anticipo".',
+      'Se marca ganada con el anticipo pagado, o con el contrato firmado subido. Son las mismas condiciones que imprime el contrato.'
+    ]
+  },
+  contrato: {
+    titulo: 'El contrato',
+    texto: [
+      'Sale de esta cotización: cliente, fecha, precio línea por línea y condiciones. No se escribe nada dos veces.',
+      'Se imprime, se firma en papel y se sube el firmado. Si después cambias la cotización, el que vale es el papel.'
+    ]
+  },
+  mandarContrato: {
+    titulo: 'Mandar el contrato',
+    texto: [
+      'WhatsApp y Correo abren el mensaje con el link del contrato. Al volver te pregunto si lo mandaste.',
+      'Si no vuelve firmado, te lo recuerdo arriba de Cotizaciones. Se sube el firmado y listo.'
+    ]
+  },
+  ley20393: {
+    titulo: 'Ley 20.393',
+    texto: [
+      'Agrega al contrato la cláusula de prevención de delitos que suelen pedir las empresas grandes.',
+      'Si el cliente no la pidió, déjala sin marcar.'
+    ]
+  },
+  acuerdos: {
+    titulo: 'Acuerdos adicionales',
+    texto: [
+      'Lo que se acordó aparte con el cliente. Va como la última cláusula del contrato, tal como lo escribes.'
+    ]
+  },
+  cambiosFecha: {
+    titulo: 'Cambios de fecha',
+    texto: [
+      'Cuántas veces el cliente puede mover la fecha. En blanco vale Configuración; un 0 saca la frase del contrato.'
+    ]
+  },
+  cancelacionDias: {
+    titulo: 'Cancela hasta',
+    texto: [
+      'Hasta cuántos días antes del evento el cliente puede cancelar con devolución. Un 0 saca la frase del contrato.',
+      'Al apretar "Cancelar evento", el panel mira esto para proponer cuánto devolver.'
+    ]
+  },
+  reembolso: {
+    titulo: 'Devuelve, % de lo pagado',
+    texto: [
+      'Qué parte de lo que el cliente ya pagó se le devuelve si cancela a tiempo.',
+      'Es lo que imprime el contrato y lo que propone "Cancelar evento". Se negocia por cotización.'
+    ]
+  },
+  pagosCliente: {
+    titulo: 'Pagos del cliente',
+    texto: [
+      'Cada pago se anota con su monto y su comprobante. Todo lo cobrado cuenta primero para el anticipo.',
+      'Quien hace los pagos revisa cada comprobante; si se cambia el archivo, vuelve a quedar sin revisar.',
+      'Un pago anotado por error se deshace. Una devolución es un pago en negativo.'
+    ]
+  },
+  // **El resumen de vendedores y socios** (2026-11-12, lo pidió el cliente:
+  // *"no te olvides de los signos de interrogación y explicar bien cómo se
+  // calcula qué número"*).
+  // ---------- La Lista de cotizaciones (2026-11-17) ----------
+  listaEnCarrera: {
+    titulo: 'En carrera',
+    texto: [
+      'Las cotizaciones que siguen vivas: candidatos, borradores, mandadas y en negociación, sin vencer y sin ganar.',
+      'Una cotización con alternativas cuenta una vez. Abajo, cuánta gente traerían si se ganan todas.'
+    ]
+  },
+  listaCotizado: {
+    titulo: 'Cotizado',
+    texto: [
+      'La suma de lo que se le mandó al cliente y sigue en carrera: Enviadas y en Negociación. Es lo mismo que cuenta el calendario.',
+      'Lo que todavía no se manda —candidatos y borradores— va aparte, en la línea de abajo.'
+    ]
+  },
+  listaGanado: {
+    titulo: 'Ganado',
+    texto: [
+      'La suma de las cotizaciones ganadas de lo que estás mirando, con su total con IVA.',
+      'Si eliges un periodo, cuenta las ganadas cuyo evento cae en él, o que se cotizaron en él, según la fecha que elijas.'
+    ]
+  },
+  // ---------- Las estadísticas de reservas (2026-11-19) ----------
+  estReservas: {
+    titulo: 'Reservas',
+    texto: [
+      'Las reservas del periodo que siguen en pie: sin las canceladas, reembolsadas, anuladas ni las que se cayeron por cupo.',
+      'Se comparan en % con el periodo anterior.'
+    ]
+  },
+  estPersonas: {
+    titulo: 'Personas',
+    texto: [
+      'La gente de esas reservas, contada igual que en el calendario: si se rectificó, la que llegó de verdad, más la que se agregó en la mesa.'
+    ]
+  },
+  estOcupacion: {
+    titulo: 'Ocupación',
+    texto: [
+      'Las personas dividido por el cupo de los días que recibieron gente en el periodo (abiertos o privados, no los cerrados).',
+      'Solo se calcula por fecha de la visita. Se compara en puntos: de 40% a 45% son 5 puntos.'
+    ]
+  },
+  estGrupo: {
+    titulo: 'Grupo promedio',
+    texto: ['Cuántas personas trae una reserva en promedio: las personas dividido por las reservas.']
+  },
+  estNoShow: {
+    titulo: 'No-show',
+    texto: [
+      'De las reservas que la recepción ya marcó, cuántas no vinieron: No vino dividido por las marcadas (Vino + No vino).',
+      'Solo cuentan los días que ya pasaron. Las que quedaron sin marcar se dicen aparte y no entran en el %: si son muchas, la tasa no es confiable.'
+    ]
+  },
+  estLlegaronMenos: {
+    titulo: 'Llegaron menos',
+    texto: [
+      'En las reservas que sí vinieron, cuánta gente faltó: reservaron 6 y llegaron 4 son 2.',
+      'Sale de lo que la recepción anota en "llegaron". Si no anotó cuántos, no cuenta.'
+    ]
+  },
+  estCanceladas: {
+    titulo: 'Cancelaciones',
+    texto: [
+      'De todas las reservas del periodo, cuántas liberaron su lugar: canceladas, reembolsadas, anuladas o caídas por cupo o por un evento exclusivo.',
+      'Se compara en puntos.'
+    ]
+  },
+  estPorReserva: {
+    titulo: 'Valor por reserva',
+    texto: [
+      'El monto reservado dividido por las reservas que tienen monto. IVA incluido.',
+      'Es lo que se acordó al reservar, no lo que se consumió: eso es la cuenta final.'
+    ]
+  },
+  estPorPersona: {
+    titulo: 'Valor por persona',
+    texto: ['El monto reservado dividido por la gente de esas mismas reservas. IVA incluido.']
+  },
+  estTotal: {
+    titulo: 'Total reservado',
+    texto: [
+      'La suma de los montos de las reservas del periodo que siguen en pie.',
+      'Pagado es lo que ya entró (pagadas completas y lo abonado); por cobrar, el resto.'
+    ]
+  },
+  estCuentaFinal: {
+    titulo: 'Cuenta final por persona',
+    texto: [
+      'El valor final que anota la mesa (el total de la cuenta en Fudo, con lo prepagado) dividido por la gente de esas mesas.',
+      'Debajo, cuánto más que lo reservado se consumió por persona: lo que se pidió de más en la mesa. Solo cuentan las mesas que anotaron su valor final.'
+    ]
+  },
+  estSerie: {
+    titulo: 'Personas por día',
+    texto: [
+      'Cada columna es un día que recibió gente o tuvo reservas; en un periodo de más de dos meses, una semana.',
+      'La barra dorada son las personas y el fondo claro, el cupo de ese día. Toca una columna para ver los números, o abre la tabla.'
+    ]
+  },
+  estOrigen: {
+    titulo: 'De dónde vienen',
+    texto: [
+      'Las reservas según cómo llegaron: Shopify pagando en línea (pago directo), Shopify pagando en el local (solo reserva), anotadas a mano o nacidas de una cotización ganada.'
+    ]
+  },
+  estMenus: {
+    titulo: 'Menús',
+    texto: ['Cuántas personas comieron cada menú, contando lo rectificado y lo agregado en la mesa. Es lo mismo que "Qué preparar" del día, sumado.']
+  },
+  estAnticipacion: {
+    titulo: 'Anticipación',
+    texto: [
+      'Con cuántos días de anticipación se reserva: del día en que se hizo la reserva al día de la visita.',
+      'La mediana es el valor del medio: la mitad reserva con menos días y la otra mitad con más.'
+    ]
+  },
+  estPorDia: {
+    titulo: 'Por día de la semana',
+    texto: [
+      'Las personas promedio de cada día de la semana: las personas de esos días dividido por cuántos de esos días recibieron gente en el periodo.'
+    ]
+  },
+
+  listaTasa: {
+    titulo: 'Tasa de cierre',
+    texto: [
+      'De las cotizaciones que ya se decidieron, cuántas se ganaron: ganadas dividido por ganadas más perdidas.',
+      'Las que siguen en carrera, las vencidas y las alternativas no elegidas no cuentan.'
+    ]
+  },
+  listaPorSeguir: {
+    titulo: 'Por seguir',
+    texto: [
+      'Las que esperan que alguien las mueva: mandadas sin respuesta hace días, con el evento cerca y sin ganar, o con el contrato mandado y sin volver firmado.',
+      'Son las mismas de Esperando respuesta, pero de todo lo que estás mirando.'
+    ]
+  },
+  listaPorCobrar: {
+    titulo: 'Por cobrar',
+    texto: [
+      'Lo que falta cobrar de las ganadas: su total menos los pagos anotados. Las devoluciones restan.',
+      'Apriétala para ver cuáles son.'
+    ]
+  },
+  listaPorMes: {
+    titulo: 'Ganado por mes',
+    texto: [
+      'Lo ganado en cada mes, según el día en que se marcó ganada. Muestra los últimos seis meses con algo ganado.',
+      'Sigue a lo que eliges en De quién, no al periodo de arriba.'
+    ]
+  },
+
+  vendLeToca: {
+    titulo: 'Le toca',
+    texto: [
+      'Las comisiones de las ventas que el cliente terminó de pagar —y pagos revisó— dentro de este periodo, más el sueldo fijo si el último día de un mes cae adentro.',
+      'Una venta cuenta en el periodo en que el cliente completó el pago, no en el del evento. Una cancelada no deja comisión.'
+    ]
+  },
+  vendPagado: {
+    titulo: 'Pagado',
+    texto: ['Lo que se le registró en el informe con el concepto Comisión, dentro de este periodo.']
+  },
+  vendFalta: {
+    titulo: 'Falta',
+    texto: ['Le toca menos lo pagado. Es lo que paga el botón Pagarle.']
+  },
+  vendEtapas: {
+    titulo: 'Comisión por etapas',
+    texto: [
+      'El % depende de las personas del evento: rige la etapa más alta que alcance. Con 2% desde 22, 3% desde 55 y 4% desde 77, un evento de 60 personas paga el 3% y uno de 15 no paga comisión.',
+      'Bajo el "desde" de la etapa 1 no hay comisión; de partida es 22, y 1 es desde la primera persona. El % va sobre el neto de la venta (sin IVA), salvo que se elija el total.',
+      'Se congela cuando el cliente termina de pagar y pagos lo revisa: cambiar el trato vale para lo que se pague después.'
+    ]
+  },
+  vendConSocio: {
+    titulo: 'Cuando la venta viene con un socio',
+    texto: [
+      'Son dos comisiones separadas. El socio cobra su propia comisión, completa, según su trato. Aparte, el vendedor cobra este % de su propia comisión.',
+      'Ejemplo: 60 personas, neto $3.000.000. El socio (10%) cobra $300.000. El vendedor (3%) cobraría $90.000; con socio al 50% cobra $45.000. En total se pagan $345.000.',
+      'No es el 50% de lo que gana el socio, ni sale de su comisión.'
+    ]
+  },
+  vendBono: {
+    titulo: 'Bono en menús premium',
+    texto: [
+      'Puntos que se suman al % de la etapa, solo sobre las líneas de los productos marcados ★ Bono vendedor en Productos.',
+      'Ejemplo: 2 puntos sobre $1.000.000 neto de Sommelier son $20.000 más.'
+    ]
+  },
+  vendMontoEvento: {
+    titulo: 'Monto por evento',
+    texto: ['Un monto fijo por cada venta ganada, además del %. Cuenta cuando el cliente termina de pagar y pagos lo revisa.']
+  },
+  vendSueldoFijo: {
+    titulo: 'Sueldo fijo',
+    texto: ['Se suma una vez por mes, el último día del mes: un periodo que incluye ese día lo cuenta. Una semana que no lo incluye no suma fijo.']
+  },
+  vendBase: {
+    titulo: 'Neto o total',
+    texto: ['Sobre qué monto se calcula el %: el neto, sin IVA, que es el de partida, o el total con IVA.']
+  },
+  marcarGanada: {
+    titulo: 'Marcar ganada',
+    texto: [
+      'Crea la reserva en el calendario y le toma el cupo al día. Si el día no estaba abierto, lo abre como privado.',
+      'Se puede con el anticipo pagado (paso Envío) o con el contrato firmado subido (paso Contrato). Sin ninguno de los dos, avisa antes.',
+      'Las otras alternativas pasan a "No elegida". La cotización se sigue pudiendo editar, y su reserva se actualiza sola.'
+    ]
+  },
+  corregirGanada: {
+    titulo: 'Corregir la ganada',
+    texto: [
+      'Para cuando se marcó ganada por error, o la ganada se cayó.',
+      'Puedes volver a antes de ganar —la reserva sale del calendario y la cotización queda con su anticipo—, pasar a otra alternativa con sus pagos, o cancelar el evento si el cliente ya no viene.'
+    ]
+  },
+  cancelarEvento: {
+    titulo: 'Cancelar evento',
+    texto: [
+      'Deja la reserva cancelada y libera el cupo. Propone cuánto devolver según las condiciones de esta cotización, y el monto se puede cambiar.',
+      'Si el día existía solo por este evento, vuelve a como estaba. No se deshace: si el cliente vuelve, es una cotización nueva.'
+    ]
+  },
+
+  seguimiento: {
+    titulo: 'Seguimiento y envío',
+    texto: [
+      'WhatsApp y Correo abren el mensaje con el link y tu nombre, listo para mandar: en el celular se abre la aplicación y en el computador WhatsApp Web, directo en el chat. Al volver al panel te pregunta si la mandaste y la pasa a Enviada. Desde ahí corre la vigencia y aparece como posible en el calendario de reservas.',
+      'Después te recuerda preguntarle al cliente: arriba de Cotizaciones, en "Esperando respuesta".'
+    ]
+  },
+  esperandoRespuesta: {
+    titulo: 'Esperando respuesta',
+    texto: [
+      'Las cotizaciones mandadas que llevan días sin moverse, las que tienen el evento cerca sin estar ganadas, y los contratos mandados que no han vuelto firmados.',
+      'Contesta ahí mismo: "Está negociando", "Se perdió" o "Sigue esperando", que te vuelve a preguntar más adelante. Los plazos se cambian en cada cotización o en Configuración.'
+    ]
+  },
+  seguimientoDias: {
+    titulo: 'Sin respuesta, a los días',
+    texto: [
+      'Cuántos días después de mandarla te pregunto "¿y?", si nada se movió. "Sigue esperando" lo posterga otro tanto.',
+      'En blanco vale Configuración; en 0 no pregunta.'
+    ]
+  },
+  avisoEvento: {
+    titulo: 'Días antes del evento',
+    texto: [
+      'Cuántos días antes del evento te pregunto si se ganó o se perdió, si todavía no está ganada.',
+      'En blanco vale Configuración; en 0 no pregunta.'
+    ]
+  },
+
+  // ---------- Productos ----------
+  preciosReserva: {
+    titulo: 'Precios de reserva',
+    texto: [
+      'Se usan para el monto sugerido al anotar una reserva a mano.',
+      'No cambian el precio del sitio público ni el de Shopify: esos se cambian aparte.'
+    ]
+  },
+  cobro: {
+    titulo: 'Cómo se cobra',
+    texto: [
+      'Por persona: el precio se multiplica por la cantidad, que se ajusta con − y + en cada cotización. Monto fijo: un solo precio, sin cantidad, como el arriendo o el show: va o no va.'
+    ]
+  },
+  moneda: {
+    titulo: 'Pesos o UF',
+    texto: [
+      'En UF, la cotización lo convierte a pesos con la UF del día en que se agrega, y esa UF queda fija en la cotización.'
+    ]
+  },
+  ivaProducto: {
+    titulo: 'IVA del precio',
+    texto: [
+      'Incluido: el precio que escribes ya trae el IVA. + IVA: el IVA se suma encima en la cotización.'
+    ]
+  },
+
+  // ---------- Equipo ----------
+  modalidad: {
+    titulo: 'Por turno o contratado',
+    texto: [
+      'Por turno: se le paga la jornada de cada día que viene.',
+      'Contratado: su sueldo va por liquidación, fuera del panel. Acá solo se le suman horas extra y ajustes del día.'
+    ]
+  },
+  propinaFicha: {
+    titulo: 'Entra en la propina',
+    texto: [
+      'La propina de un día se reparte en partes iguales entre quienes vinieron y tienen esta casilla marcada.',
+      'Desmárcala solo para quien no participa del reparto.'
+    ]
+  },
+
+  // ---------- El día ----------
+  diaCerrado: {
+    titulo: 'Un día cerrado',
+    texto: [
+      'Ya no se edita: lo cerró alguien que revisó quién vino y cuánto se paga.',
+      'Si algo quedó mal, el encargado de operaciones o quien hace los pagos lo corrige con un motivo, o lo compensa con un ajuste en la semana siguiente.'
+    ]
+  },
+  propinaDia: {
+    titulo: 'Propina del día',
+    texto: [
+      'Se escribe el total del día. El panel lo reparte en partes iguales entre quienes vinieron y participan.',
+      'No suma al costo del equipo: es plata que pasa por el negocio, no que sale de él.'
+    ]
+  },
+
+  // ---------- Informe ----------
+  boleta: {
+    titulo: 'La boleta',
+    texto: [
+      'Una por semana, por su sueldo o su servicio. La propina nunca la pide, y a un contratado tampoco.',
+      'Si falta, igual se puede pagar: el aviso queda en ámbar hasta que llegue.'
+    ]
+  },
+  transferenciaMasiva: {
+    titulo: 'Transferencia masiva',
+    texto: [
+      'La planilla trae a quien le falta pago y tiene su cuenta completa. "Todos pagados" marca exactamente a esa misma gente.',
+      'Sueldos y propinas van por separado: son dos pagos.'
+    ]
+  },
+  deshacerPago: {
+    titulo: 'Deshacer o pago negativo',
+    texto: [
+      'Deshacer es para un pago anotado sin querer, que nunca ocurrió: borra la fila.',
+      'Si se pagó de más o devolvieron plata, anota un pago en negativo: ahí sí hubo dos movimientos.'
+    ]
+  }
+};

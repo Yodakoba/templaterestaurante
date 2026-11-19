@@ -1,0 +1,142 @@
+import type { Fecha } from './fechas.ts';
+import type { TipoPago } from './columnas.ts';
+
+export interface Reserva {
+  id: string;            // ID Orden. MANUAL-<timestamp> si se creó a mano.
+  fecha: Fecha;
+  nombre: string;
+  email: string;
+  telefono: string;
+  menu: string;          // Tradiciones | A Brasas Abiertas | Niños
+  personas: number;
+  monto: number | null;  // en blanco para las manuales: el panel no fija precios
+  // **Solo lo escribe Shopify.** Vacío en una reserva anotada a mano: sale
+  // del `variant_title` del pedido, y una manual no compró ninguna variante.
+  tipoPago: TipoPago | '';
+  estadoPago: string;    // el financial_status de Shopify, tal cual
+  creada: string;
+  asistencia: string;   // '' sin marcar · 'Sí' vino · 'No' no-show
+  // Cómo se pagó una reserva anotada a mano: "transferencia 28/10",
+  // "efectivo en el mesón". Texto libre a propósito: cuáles son los medios
+  // de pago del negocio es dato del cliente, no una lista nuestra.
+  notaPago: string;
+  /** Cuánta gente llegó, según la anfitriona; `null` si no se anotó. */
+  llegaron?: number | null;
+  /** El aviso de recepción al jefe de turno, o vacío. */
+  avisoRecepcion?: string;
+  /** Cuánto abonó, si está *Abonada*; `null` si no se sabe. */
+  abonado?: number | null;
+  /** La gente que se sumó a la mesa en el día (`lib/mesa.ts`): *"1 × Tradiciones + 2 × A la carta"*. */
+  agregados?: string;
+  /** El total de la cuenta de la mesa en Fudo, con lo ya pagado; `null` si no se anotó. */
+  valorFinal?: number | null;
+  /** Quién y cuándo anotó el valor final: *"2026-11-17 17:40 · Fernanda"*. */
+  mesaCerrada?: string;
+  /**
+   * **Cómo se ingresa en Fudo** (`comoIngresar()`). No es una columna: lo
+   * arma el servidor al responder, para que la pantalla no tenga que
+   * deducirlo.
+   */
+  ingreso?: import('./fudo.ts').Ingreso | null;
+  /** El id del evento del CRM del socio del que salió, o vacío. */
+  eventoCRM: string;
+  /**
+   * Con qué cuenta del panel se anotó, o vacío si no la anotó una persona
+   * —las de Shopify y las anteriores a esta columna—. Es lo que decide si
+   * un vendedor puede tocarla: ver `puedeTocarReserva()`.
+   */
+  anotadaPor: string;
+  /**
+   * Si se cayó por cupo: *"2026-11-12 14:03 · Felipe · motivo"*. Vacía es
+   * que sigue en pie. Ver `COL_RESERVAS.liberada` y `ocupaLugar()`.
+   */
+  liberada?: string;
+  /** La rectificación del día: ver `rectificacion.ts`. */
+  personasReales?: number | null;
+  menuReal?: string;
+  descuento?: number | null;
+  rectificacion?: string;
+  aprobacion?: string;
+  /** Si su día se liberó para un evento exclusivo: ver `COL_RESERVAS.liberacion`. */
+  liberacion?: string;
+  /** Quién marcó el pago, quién de pagos lo revisó y quién vio el descuento: ver `plata.ts`. */
+  pagoAnotado?: string;
+  pagoRevisado?: string;
+  descuentoRevisado?: string;
+  fila: number;          // número de fila en la planilla, para poder editarla
+  /**
+   * Cuántas filas de la planilla traen este mismo `ID Orden`. Ausente o 1 es
+   * lo normal. Más de una significa que el mismo pedido quedó anotado dos
+   * veces: `leerReservasDe()` lo cuenta una sola vez y deja esto para que la
+   * pantalla pueda decirlo. Ver su comentario.
+   */
+  duplicadas?: number;
+  /**
+   * El servidor tapó el contacto para esta cuenta (`recortarReserva()` en
+   * `privacidad.ts`): el teléfono viene como `···· 5678` y sin correo. La
+   * pantalla no ofrece llamar ni escribir.
+   */
+  contactoTapado?: boolean;
+}
+
+export interface FechaHabil {
+  fecha: Fecha;
+  capacidad: number;
+  apertura: string;      // "13:00"
+  estado: string;        // Abierta | Bloqueada
+  notas: string;
+  /** El pedido de subir el cupo, o vacío. Ver `lib/cupo.ts`. */
+  cupoPedido?: string;
+  fila: number;
+}
+
+export interface Ocupacion {
+  fecha: Fecha;
+  capacidad: number;
+  tomadas: number;
+  quedan: number;
+  pagadas: number;       // personas de reservas ya pagadas
+  porPagar: number;      // personas a las que hay que cobrarles
+  /** De `porPagar`, las que ya abonaron una parte. Sin pagar nada = porPagar - abonadas. */
+  abonadas: number;
+  /**
+   * Lugares para quien **paga ahora** (2026-11-12): la capacidad menos lo
+   * pagado y lo abonado. Una reserva sin pagar no le quita el lugar a quien
+   * paga; `quedan` sí la cuenta y es lo que le queda a quien solo reserva.
+   */
+  quedanPagando: number;
+  /** Personas por encima del cupo: un pago entró sobre reservas sin pagar. */
+  sobrecupo: number;
+  porCobrar: number;     // pesos a cobrar el mismo día
+  sinMonto: number;      // reservas por cobrar SIN monto anotado
+  privada: boolean;      // recibe reservas, pero el sitio no la ofrece
+  /**
+   * El recinto arrendado **completo y en exclusiva** ese día.
+   *
+   * Siempre viene junto con `privada`, nunca sola: un día exclusivo es un
+   * día privado al que además no le cabe otro evento. Lo que distingue es
+   * eso último, y es lo que el calendario del socio necesita — un privado
+   * corriente admite un segundo evento en paralelo, un exclusivo no.
+   */
+  exclusiva: boolean;
+  /**
+   * Cuántos presupuestos vigentes hay ese día, y cuánta gente sumarían si
+   * todos se confirmaran.
+   *
+   * **Son dos campos que nadie más mira.** No entran en `tomadas`, no
+   * descuentan de `quedan` y no mueven el `semaforo`: un presupuesto es una
+   * posibilidad, no una silla ocupada, y hasta que se confirme no puede
+   * sacarle el lugar a quien sí reservó. Están para poder decirlo en
+   * pantalla —"2 presupuestos · 43 posibles"— y para nada más.
+   *
+   * Al sitio público **nunca llegan**: `paraElSitio()` devuelve tres campos
+   * y hay una prueba que lo fija.
+   */
+  presupuestos: number;
+  presupuestadas: number;
+  semaforo: Semaforo;
+  bloqueada: boolean;
+  notas: string;
+}
+
+export type Semaforo = 'verde' | 'amarillo' | 'rojo';

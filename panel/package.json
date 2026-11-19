@@ -1,0 +1,30 @@
+{
+  "name": "brasas-panel",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "prueba": "node --experimental-strip-types src/lib/prueba.ts",
+    "tipos": "tsc --noEmit",
+    "revisar": "npm run tipos && npm run prueba && npm run lecturas && npm run letra-chica && npm run comentarios",
+    "lecturas": "node --no-warnings --experimental-strip-types --import ./pruebas/lecturas/registrar.mjs pruebas/lecturas/presupuesto.mjs",
+    "letra-chica": "node pruebas/letra-chica.mjs",
+    "comentarios": "NODE_ENV=development node --no-warnings --experimental-strip-types --import ./pruebas/lecturas/registrar.mjs pruebas/comentarios.mjs"
+  },
+  "dependencies": {
+    "googleapis": "144.0.0",
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "@types/react": "18.3.11",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.47",
+    "tailwindcss": "3.4.14",
+    "typescript": "5.6.3"
+  }
+}

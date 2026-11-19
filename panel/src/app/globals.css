@@ -1,0 +1,440 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Los dos temas del panel.
+ *
+ * **El oscuro es el de siempre y no cambió ni un color**: es el del sitio
+ * —negro, hueso y dorado— y el que el equipo ya aprendió. El claro se agregó
+ * el 2026-10-30 porque el panel se usa de día, muchas veces afuera, donde una
+ * pantalla negra con letras finas se lee mal.
+ *
+ * **El claro no es blanco pelado.** El fondo es papel tibio (`#FAF7F0`) y las
+ * tarjetas blancas encima, así que lo que está arriba se despega del fondo en
+ * vez de competir con él; el texto es un casi-negro cálido, no `#000`, que es
+ * lo que hace que una pantalla llena de datos no canse. Es la misma marca,
+ * dada vuelta.
+ *
+ * **El dorado se oscurece de día**, de `#C9A227` a `#8A6B12`. No es un
+ * capricho: el dorado del sitio sobre crema da menos de 2,5:1, o sea que
+ * todos los enlaces del panel serían ilegibles. El oro viejo, más profundo,
+ * se lee sobre papel y sigue siendo oro.
+ *
+ * **Los verdes y rojos se invierten de rol.** De noche el texto de un aviso
+ * es claro sobre un fondo apenas teñido; de día tiene que ser oscuro sobre
+ * ese mismo fondo. Por eso `-texto` existe aparte del tono base.
+ */
+:root {
+  color-scheme: dark;
+
+  --tinta: 11 11 10;
+  --panel: 20 18 15;
+  --hueso: 244 240 230;
+  --oro: 201 162 39;
+
+  --verde: 16 185 129;
+  --verde-fuerte: 52 211 153;
+  --verde-texto: 110 231 183;
+
+  --rojo: 239 68 68;
+  --rojo-fuerte: 248 113 113;
+  --rojo-texto: 252 165 165;
+
+  --ambar: 245 158 11;
+  --ambar-fuerte: 251 191 36;
+  --ambar-texto: 252 211 77;
+
+  --cielo: 14 165 233;
+  --cielo-fuerte: 56 189 248;
+  --cielo-texto: 125 211 252;
+
+  /* Lo cotizado y sin confirmar. */
+  --rosa: 236 72 153;
+  --rosa-fuerte: 244 114 182;
+  --rosa-texto: 249 168 212;
+  /* Morado: el día **exclusivo**, el recinto arrendado completo (2026-11-12). */
+  --morado: 168 85 247;
+  --morado-fuerte: 192 132 252;
+  --morado-texto: 216 180 254;
+  /* Café: el día de **preparación** (2026-11-12). */
+  --cafe: 168 120 82;
+  --cafe-fuerte: 196 145 102;
+  --cafe-texto: 222 184 148;
+  /* Añil: el tono de la sección **Extras** (2026-11-13), como el dorado de
+     Reservas, el rosado de Cotizaciones y el celeste de Turnos. Uno nuevo
+     porque los que quedaban ya significan algo: café es preparación, morado
+     exclusivo, verde pagado. */
+  --anil: 99 102 241;
+  --anil-fuerte: 129 140 248;
+  --anil-texto: 165 180 252;
+
+  /* Cuánto se apaga un marcador de posición. Ver abajo. */
+  --fantasma: 0.28;
+}
+
+:root[data-tema='claro'] {
+  color-scheme: light;
+
+  --tinta: 250 247 240;
+  --panel: 255 255 255;
+  --hueso: 26 23 19;
+  --oro: 138 107 18;
+
+  --verde: 5 150 105;
+  --verde-fuerte: 4 120 87;
+  --verde-texto: 6 95 70;
+
+  --rojo: 220 38 38;
+  --rojo-fuerte: 185 28 28;
+  --rojo-texto: 153 27 27;
+
+  --ambar: 217 119 6;
+  --ambar-fuerte: 180 83 9;
+  --ambar-texto: 124 45 18;
+
+  --cielo: 2 132 199;
+  --cielo-fuerte: 3 105 161;
+  --cielo-texto: 7 89 133;
+
+  /* De día el rosado se oscurece, como el dorado: el de noche sobre papel
+     da menos de 3:1 y "2 presupuestos" no se leería con sol encima. */
+  --rosa: 219 39 119;
+  --rosa-fuerte: 190 24 93;
+  --rosa-texto: 157 23 77;
+  /* De día el morado también se oscurece, para leerse sobre papel. */
+  --morado: 147 51 234;
+  --morado-fuerte: 126 34 206;
+  --morado-texto: 107 33 168;
+  --cafe: 133 86 52;
+  --cafe-fuerte: 112 70 40;
+  --cafe-texto: 99 60 31;
+  --anil: 79 70 229;
+  --anil-fuerte: 67 56 202;
+  --anil-texto: 55 48 163;
+
+  /* Sobre papel, el mismo 0,28 se perdía: un gris claro sobre blanco casi
+     no se ve, y un marcador que no se ve no enseña el formato. */
+  --fantasma: 0.42;
+}
+
+/**
+ * **La escala de transparencias no significa lo mismo sobre papel.**
+ *
+ * `text-hueso/45` de noche es hueso claro sobre negro y da 4,1:1; de día es
+ * casi-negro al 45% sobre crema y cae a 2,6:1, o sea que todo lo secundario
+ * —el puesto bajo un nombre, el id de una reserva, los guiones de "no hay
+ * dato"— se desvanecía justo en la pantalla que se mira con sol encima. No
+ * es un problema de qué color es el texto: es que el mismo porcentaje rinde
+ * distinto según contra qué se mezcle.
+ *
+ * Se arregla acá, en un solo lugar, subiendo **los tramos bajos** en el tema
+ * claro hasta que cada uno rinda más o menos lo que rendía de noche. La
+ * alternativa era escribir `text-hueso/45 dark:text-hueso/60` en los 300 y
+ * tantos lugares donde aparece, con un número nuevo que olvidar cada vez.
+ *
+ * Los tramos de 75 para arriba no están: ahí ya hay contraste de sobra en
+ * los dos temas.
+ */
+:root[data-tema='claro'] .text-hueso\/20 { color: rgb(var(--hueso) / .35); }
+:root[data-tema='claro'] .text-hueso\/25 { color: rgb(var(--hueso) / .40); }
+:root[data-tema='claro'] .text-hueso\/30 { color: rgb(var(--hueso) / .45); }
+:root[data-tema='claro'] .text-hueso\/35 { color: rgb(var(--hueso) / .50); }
+:root[data-tema='claro'] .text-hueso\/40 { color: rgb(var(--hueso) / .55); }
+:root[data-tema='claro'] .text-hueso\/45 { color: rgb(var(--hueso) / .58); }
+:root[data-tema='claro'] .text-hueso\/50 { color: rgb(var(--hueso) / .62); }
+:root[data-tema='claro'] .text-hueso\/55 { color: rgb(var(--hueso) / .66); }
+:root[data-tema='claro'] .text-hueso\/60 { color: rgb(var(--hueso) / .70); }
+:root[data-tema='claro'] .text-hueso\/70 { color: rgb(var(--hueso) / .78); }
+
+/**
+ * **Y el hover tiene que seguir ganando.** El bloque de arriba es más
+ * específico que las clases `hover:` de Tailwind —lleva `:root` y un
+ * atributo encima— así que, sin esto, en el tema claro un enlace gris dejaba
+ * de ponerse dorado al pasarle el mouse. Son cuatro colores en todo el
+ * panel; se vuelven a afirmar acá, después, con la misma especificidad.
+ */
+:root[data-tema='claro'] .hover\:text-oro:hover { color: rgb(var(--oro)); }
+:root[data-tema='claro'] .hover\:text-rojo-texto:hover { color: rgb(var(--rojo-texto)); }
+:root[data-tema='claro'] .hover\:text-verde-texto:hover { color: rgb(var(--verde-texto)); }
+:root[data-tema='claro'] .hover\:text-hueso:hover { color: rgb(var(--hueso)); }
+
+/**
+ * Un botón relleno apagado no puede verse roto.
+ *
+ * `bg-oro` con `disabled:opacity-40` funciona de noche —dorado apagado sobre
+ * negro se lee como apagado— y de día quedaba crema sobre oro pálido, que no
+ * se lee como nada. Apagado es gris: dice lo mismo sin pedir esfuerzo.
+ */
+:root[data-tema='claro'] .bg-oro:disabled {
+  opacity: 1;
+  background-color: rgb(var(--hueso) / .11);
+  color: rgb(var(--hueso) / .45);
+}
+
+/* Los bordes tienen el problema al revés: sobre papel, un 10% de casi-negro
+   es una línea gris perfectamente visible, mientras que de noche hacía falta
+   ese mismo 10% para insinuar un borde sobre el fondo. Se dejan como están. */
+
+body {
+  background: rgb(var(--tinta));
+  color: rgb(var(--hueso));
+}
+
+/**
+ * Un marcador de posición tiene que verse como lo que es.
+ *
+ * Con el contraste por defecto, un `placeholder` que muestra un ejemplo
+ * realista —un RUT, el nombre de la persona para el titular de su cuenta—
+ * se lee de un vistazo como un dato ya escrito, y alguien da por llena una
+ * ficha vacía. Bajarle el contraste los distingue sin tener que renunciar
+ * a ejemplos útiles, que son justamente los que enseñan el formato.
+ */
+::placeholder { color: rgb(var(--hueso) / var(--fantasma)); opacity: 1; }
+
+/**
+ * Los controles que se aprietan con el dedo se hunden un pelo.
+ *
+ * Lo pidió el cliente —*"un juguetón bien de PlayStation, dónde y cómo usar
+ * los botones"*— y resuelve algo real: en un teléfono no hay cursor que
+ * cambie ni `hover` que anticipe nada, así que un botón y un texto se ven
+ * igual hasta que uno de los dos responde. Un milímetro de hundida al tocar
+ * es la respuesta más barata que existe, y la que todo el mundo ya entiende.
+ *
+ * **Vale para todos los botones del panel**, no para una clase que haya que
+ * acordarse de poner: un botón al que se le olvidó es justamente el que se
+ * va a sentir muerto. `.tecla` queda como alias para lo que no sea un
+ * `<button>`.
+ *
+ * Un botón apagado no se hunde: fingir que respondió sería mentir sobre lo
+ * único que ese botón está diciendo.
+ */
+button, .tecla {
+  transition: transform .06s ease, box-shadow .12s ease,
+              background-color .12s ease, border-color .12s ease;
+}
+button:active:not(:disabled), .tecla:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button, .tecla { transition: none; }
+  button:active:not(:disabled), .tecla:active:not(:disabled) { transform: none; }
+}
+
+/**
+ * EL BOTÓN DEL PANEL, en un solo lugar — la regla PlayStation hecha clase.
+ *
+ * Nació el 2026-11-01, cuando el cliente miró la barra de arriba en el
+ * teléfono: *"no se siente cero PlayStation, se parece a una lista de
+ * máquina de escribir"*. Tenía razón, y el problema de fondo era que cada
+ * pantalla se escribía su propio botón a mano: unos con borde, otros un
+ * texto en gris que resultaba ser un enlace, y cada uno con su tamaño.
+ *
+ * Acá vive el acuerdo: **borde, 36px de alto y 13px**, que es lo que la
+ * regla pide. Un `<a>` también puede llevarlo —de ahí `.tecla`, que le da
+ * el hundido que un `<button>` ya tiene— y así un enlace que se comporta
+ * como botón se ve como botón.
+ *
+ * `.boton-relleno` es el dorado: **uno por pantalla**, el que dice a qué
+ * se vino. Dos rellenos en la misma vista es no tener ninguno. *
+ * **Va en `@layer components`** (2026-11-12, lo encontró el cliente
+ * mirando /vendedores): suelta, después de `@tailwind utilities`, le ganaba a
+ * toda utilidad con la misma especificidad, y **152 `min-h-[44px]`, 37
+ * colores de texto, 29 tamaños de letra y 12 bordes** escritos en botones
+ * del panel no se aplicaban: los botones se quedaban en 36px, grises y sin
+ * el borde de "elegido". En la capa de componentes, la utilidad que se le
+ * pone a un botón le gana, que es lo que uno espera al escribirla.
+ */
+@layer components {
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .375rem;
+  min-height: 2.25rem;
+  border-radius: .5rem;
+  border: 1px solid rgb(var(--hueso) / .2);
+  padding: .375rem .75rem;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+  color: rgb(var(--hueso) / .8);
+}
+.boton:hover { border-color: rgb(var(--oro)); color: rgb(var(--oro)); }
+}
+
+/**
+ * El mismo botón, con menos aire a los lados.
+ *
+ * Existe por un bug medido el 2026-11-02: en la tarjeta del calendario los
+ * tres botones del pie —Reservas · Equipo N · Editar— sumaban **271px de
+ * ancho mínimo** y solo había 261, así que la tarjeta **crecía 10px por
+ * fuera de su columna** y se comía la separación con la de al lado: los 12px
+ * de la grilla quedaban en 2 y el sábado parecía chocar con el domingo.
+ *
+ * **Lo que cambia es el aire, no el tamaño**: siguen midiendo 36px de alto
+ * y 13px de letra, que es lo que la regla PlayStation pide. Y vive acá y no
+ * en la tarjeta por lo mismo que `.boton`: que ninguna pantalla se invente
+ * su propia medida.
+ */
+@layer components {
+.boton-angosto { padding-left: .5rem; padding-right: .5rem; }
+}
+
+/*
+ * **El pie de la tarjeta del calendario** (2026-11-12, lo reclamó el
+ * cliente: *Editar* quedaba chocando con el borde). Con *Equipo 18/23* los
+ * tres botones piden unos 325px —con sus íconos— y la tarjeta tiene 261 a 1280px,
+ * menos entre 1024 y 1180. Un botón no se achica (`nowrap`), así que se
+ * salía por el borde.
+ *
+ * Ahora el pie mira **su propio ancho** (container query): si no caben los
+ * tres en una línea, pasan a dos —*Reservas* y *Editar* arriba, *Equipo* a
+ * todo el ancho abajo—. Como todas las tarjetas de la grilla miden lo
+ * mismo, cambian todas juntas y siguen parejas.
+ */
+.pie-tarjeta { container-type: inline-size; }
+.pie-botones { display: flex; align-items: center; gap: .5rem; width: 100%; }
+.pie-botones > .pie-hueco { flex: 1; }
+@container (max-width: 21rem) {
+  .pie-botones { display: grid; grid-template-columns: 1fr 1fr; }
+  .pie-botones > .pie-hueco { display: none; }
+  .pie-botones > .pie-equipo { grid-column: 1 / -1; order: 3; }
+  /* Sin *Editar* (quien no edita fechas), *Reservas* va a todo el ancho. */
+  .pie-sin-editar { grid-template-columns: 1fr; }
+  .pie-botones > * { width: 100%; }
+}
+
+@layer components {
+.boton-relleno {
+  background: rgb(var(--oro));
+  border-color: rgb(var(--oro));
+  color: rgb(var(--tinta));
+  font-weight: 600;
+}
+.boton-relleno:hover { background: rgb(var(--oro)); color: rgb(var(--tinta)); filter: brightness(1.08); }
+}
+
+/**
+ * **El hito: lo que cierra una etapa** (2026-11-11, regla del cliente para
+ * todo el panel). Tres tamaños, y cada botón en el suyo:
+ *
+ * - **hito** (`.boton-hito`): cerrar el día, guardar una corrección, marcar
+ *   ganada, marcar todos pagados, cancelar un evento. Más alto, más letra,
+ *   esquinas más redondas y borde doble. **Uno por vista.**
+ * - **acción** (`.boton`, a veces con `.boton-relleno`): lo de todos los días.
+ * - **secundario** (`.boton` delineado): volver, listo, borrar, quitar. Nunca
+ *   al lado del hito con el mismo peso.
+ *
+ * Se suma a `.boton` (y al relleno o al color que corresponda): solo cambia
+ * el tamaño, no el color, para que un hito rojo —cancelar— siga siendo rojo.
+ */
+@layer components {
+.boton-hito {
+  min-height: 52px;
+  padding: .625rem 1.25rem;
+  font-size: 16px;
+  font-weight: 700;
+  border-width: 2px;
+  border-radius: .75rem;
+  justify-content: center;
+}
+}
+
+/* ---------- El presupuesto impreso ---------- */
+
+/**
+ * Lo que pasa cuando alguien aprieta "Descargar PDF".
+ *
+ * **El papel es blanco siempre**, sin importar el tema del panel: imprimir
+ * el tema oscuro gastaría un cartucho entero en un fondo negro, y en PDF se
+ * ve como un documento de otro planeta. Se fuerzan los colores acá y no se
+ * cambia el tema antes de imprimir, porque eso le haría parpadear la
+ * pantalla a quien solo quería guardar el archivo.
+ */
+@media print {
+  /* El botón y lo que explica cómo usarlo no van al papel. */
+  .sin-imprimir { display: none !important; }
+
+  /* Fuera la barra del panel y los márgenes de la aplicación: el documento
+     tiene que empezar arriba de la hoja, no a ocho centímetros. */
+  body > header { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
+
+  :root, :root[data-tema='oscuro'], :root[data-tema='claro'] {
+    --tinta: 255 255 255;
+    --panel: 255 255 255;
+    --hueso: 17 17 17;
+    /* El oro de día, que es el que se lee sobre blanco. El del sitio da
+       menos de 2,5:1 sobre papel y el total saldría casi invisible. */
+    --oro: 138 107 18;
+  }
+
+  body { background: #fff !important; color: #111 !important; }
+
+  /* Una cotización de muchas líneas no puede partir una fila en dos hojas. */
+  tr, li { break-inside: avoid; }
+
+  /* En el contrato, un título no queda solo al pie de una hoja, y las dos
+     firmas van juntas en la misma. */
+  .documento h2 { break-after: avoid; }
+  .firmas { break-inside: avoid; }
+
+  /* La caja que desplaza la tabla en un teléfono no puede recortarla en el
+     papel: en la hoja hay ancho de sobra y lo que sobresaliera se perdería
+     sin que nada lo diga. */
+  .caja-tabla { overflow: visible !important; }
+
+  @page { margin: 18mm 16mm; }
+}
+
+/**
+ * El giro de una cara a la otra, en la ventana del día de `/turnos`
+ * (2026-11-03). Es la versión de una sola cara del volteo de la tarjeta del
+ * calendario: allá las dos caras comparten celda y miden lo mismo, acá una
+ * es una lista de trabajadores y la otra de reservas, y obligarlas al mismo
+ * alto dejaría un hueco enorme en la más corta. Así que la cara que entra
+ * gira desde el canto, y la que sale simplemente deja de estar.
+ */
+@keyframes girar-cara {
+  from { transform: perspective(1200px) rotateY(-90deg); opacity: 0; }
+  to   { transform: perspective(1200px) rotateY(0);      opacity: 1; }
+}
+.girar { animation: girar-cara .35s ease-out; transform-origin: center; }
+
+/* El aviso flotante (`AvisoFlotante.tsx`) sube un poco al aparecer: un
+   texto que aparece sin moverse, abajo de la pantalla, se pierde. */
+@keyframes subir-aviso {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.aviso-flotante { animation: subir-aviso .2s ease-out; }
+
+/* **La reserva a la que se llegó desde un aviso** (2026-11-13): destella un
+   momento para que el ojo la encuentre en la lista. Ver `DayView`. */
+@keyframes destellar {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--rojo-fuerte) / 0); }
+  30%, 70% { box-shadow: 0 0 0 6px rgb(var(--rojo-fuerte) / .55); }
+}
+.destello { animation: destellar .9s ease-in-out 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .girar, .aviso-flotante, .destello { animation: none; }
+}
+
+/**
+ * Lo que queda apagado dentro de un día cerrado (2026-11-03).
+ *
+ * La ventana del día envuelve lo editable en un `<fieldset disabled>`, que
+ * apaga todos los controles de una vez. Esto hace que se **vea** apagado y
+ * no solo que deje de responder: un botón que no reacciona y se ve igual
+ * que siempre se lee como roto. Se baja la opacidad y no se borra el color,
+ * porque el estado —quién vino, quién no— tiene que seguir leyéndose.
+ */
+fieldset:disabled :is(button, input, select, textarea) {
+  cursor: not-allowed;
+  opacity: .6;
+}
+fieldset:disabled :is(button, .tecla):active { transform: none; }

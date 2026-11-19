@@ -1,0 +1,486 @@
+'use client';
+/**
+ * Crear o editar una reserva a mano: las que llegan por teléfono, por
+ * WhatsApp o en el mesón y no pasan por Shopify.
+ *
+ * **Pide los mismos datos que escribe Shopify, y de la misma forma.** Eso
+ * no es prolijidad: un pedido de Shopify queda como
+ * `2 × Menú Tradiciones + 1 × Menú Niños`, y si acá se escribiera
+ * "Tradiciones" suelto, el total del día contaría dos platos distintos y la
+ * cocina prepararía mal. Por eso:
+ *
+ * - **Un contador por menú**, como el formulario del sitio, en vez de elegir
+ *   uno solo. Una familia con dos menús distintos es lo normal.
+ * - **Las personas se calculan**, no se escriben. Antes eran un campo aparte
+ *   que podía no calzar con el menú elegido: 5 personas y "Tradiciones".
+ * - **Los nombres de menú salen de las reservas que ya hay**, o sea de lo
+ *   que Shopify escribió. No hay una lista escrita a mano que se
+ *   desincronice el día que la tienda renombre un producto.
+ *
+ * **El MONTO sí se pide** (cambió el 2026-10-21). Antes no, con el argumento
+ * de que los precios viven en Shopify y que fijarlos acá sería una segunda
+ * verdad. Eso vale para un pedido de Shopify, que trae su total y ese manda.
+ * Pero **en una reserva a mano no hay pedido de Shopify de dónde sacarlo**:
+ * no son dos verdades, es la única que hay.
+ *
+ * Se propone sumando los precios de /menus según la modalidad, y se puede
+ * corregir encima: un grupo con un acuerdo distinto es justamente el tipo de
+ * reserva que se anota a mano.
+ */
+import { useMemo, useState } from 'react';
+import type { Reserva } from '@/lib/tipos';
+import { ESTADO_PAGO } from '@/lib/columnas';
+import { ESTADOS_QUE_LIBERAN, pagoConGlosa, liberaCupo, COMO_VIENE, MEDIOS_RAPIDOS }
+  from '@/lib/pagos';
+import { esManual } from '@/lib/columnas';
+import { origenDe } from './PastillaPago';
+import { desglosarMenu, componerMenu, personasDeCuenta } from '@/lib/shopify';
+import { precioDe, aMonto, type Menu } from '@/lib/menus';
+import Dialogo from './Dialogo';
+import CampoTelefono from './CampoTelefono';
+import { correoNormal, avisoCorreo } from '@/lib/contacto';
+
+export default function ReservaForm({
+  fecha, reserva, menusConocidos, catalogo, pideMotivo = false, desdeCRM,
+  onListo, onCancelar
+}: {
+  fecha: string;
+  reserva: Reserva | null;
+  /**
+   * El ganado del socio que se está pasando al panel (2026-11-03).
+   *
+   * **Lo que el CRM sabe se propone; lo que solo sabemos acá se escribe.**
+   * El nombre viene puesto y la gente se dice en una línea, pero **no se
+   * reparte sola en los menús**: cuántos van de cada uno es justamente el
+   * dato que el socio no tiene, y rellenarlo con un menú cualquiera sería
+   * inventar lo que hay que cocinar.
+   */
+  desdeCRM?: { id: string; nombre: string; personas: number };
+  menusConocidos: string[];
+  catalogo: Menu[];
+  /**
+   * Si el día está cerrado y esto es una **corrección** (2026-11-03): pide
+   * el motivo y no deja guardar sin él. El servidor lo exige igual; acá se
+   * pide para que el error no aparezca recién al apretar Guardar.
+   */
+  pideMotivo?: boolean;
+  onListo: () => void;
+  onCancelar: () => void;
+}) {
+  const [f, setF] = useState({
+    fecha: reserva?.fecha ?? fecha,
+    nombre: reserva?.nombre ?? desdeCRM?.nombre ?? '',
+    email: reserva?.email ?? '',
+    telefono: reserva?.telefono ?? '',
+    // **La modalidad NO se edita acá**: sale del `variant_title` del pedido,
+    // o sea que la escribe Shopify y nadie más. Viaja en el estado solo para
+    // conservarla al editar una reserva comprada; una anotada a mano nace en
+    // blanco, porque no compró ninguna variante.
+    tipoPago: reserva?.tipoPago ?? '',
+    estadoPago: reserva?.estadoPago || ESTADO_PAGO.pendiente,
+    notaPago: reserva?.notaPago ?? '',
+    abonado: reserva?.abonado != null ? String(reserva.abonado) : ''
+  });
+  /** "La reserva se cayó…": los tres rojos, escondidos hasta pedirlos. */
+  const [seCayo, setSeCayo] = useState(() => liberaCupo(reserva?.estadoPago ?? ''));
+  // **De Shopify, el pago lo pone la tienda** (2026-11-11): acá solo se
+  // marca si la reserva se cayó. A mano, se elige con los tres botones.
+  const deShopify = !!reserva && !esManual(reserva.id);
+  const estadoOriginal = reserva?.estadoPago || ESTADO_PAGO.pendiente;
+
+  // El conteo por menú. Al editar se reconstruye desde el texto guardado,
+  // así que una reserva que vino de Shopify se puede corregir acá sin
+  // perder su desglose.
+  const [cuenta, setCuenta] = useState<Record<string, number>>(() => {
+    const inicial: Record<string, number> = {};
+    for (const { menu, cantidad } of desglosarMenu(reserva?.menu)) inicial[menu] = cantidad;
+    return inicial;
+  });
+
+  // Los que ya se vendieron, más los de esta reserva por si alguno dejó de
+  // venderse y no aparecería en la lista.
+  const menus = useMemo(
+    () => [...new Set([...menusConocidos, ...Object.keys(cuenta)])].sort(
+      (a, b) => a.localeCompare(b)),
+    [menusConocidos, cuenta]
+  );
+  const personas = personasDeCuenta(cuenta);
+
+  // El total que proponen los precios de /menus.
+  //
+  // **Sale del estado del pago, no de la modalidad**, desde que la modalidad
+  // dejó de preguntarse: pagada por adelantado es el precio con descuento, y
+  // por pagar es el del local, que es exactamente la regla de la tienda —el
+  // recargo son los $5.000 por no pagar antes—. El monto queda editable
+  // encima, que es para lo que existe el campo.
+  const enElLocal = f.estadoPago !== ESTADO_PAGO.pagado;
+  const sugerido = useMemo(() => {
+    let suma = 0;
+    for (const [nombre, n] of Object.entries(cuenta)) {
+      suma += precioDe(catalogo.find((m) => m.nombre === nombre), enElLocal) * n;
+    }
+    return suma;
+  }, [cuenta, catalogo, enElLocal]);
+
+  // El monto escrito. Vacio significa "usa el sugerido": asi cambiar la
+  // modalidad o agregar una persona vuelve a calcularlo, y recien cuando
+  // alguien escribe un numero el formulario deja de pisarselo.
+  const [montoManual, setMontoManual] = useState<string>(
+    reserva?.monto != null ? String(reserva.monto) : ''
+  );
+  const monto = montoManual.trim() === '' ? sugerido : aMonto(montoManual);
+
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState('');
+  const [motivo, setMotivo] = useState('');
+
+  const campo = (k: keyof typeof f) => ({
+    value: f[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setF({ ...f, [k]: e.target.value })
+  });
+
+  function sumar(menu: string, n: number) {
+    setCuenta((c) => ({ ...c, [menu]: Math.max(0, (c[menu] ?? 0) + n) }));
+  }
+
+  /**
+   * Escribir la cantidad de un menú a mano.
+   *
+   * **Los botones son una comodidad encima, no el único camino** — es la
+   * misma regla que el formulario del sitio público, y acá se había perdido:
+   * la cantidad era un `<span>`. Para una familia de seis da lo mismo; se
+   * notó al anotar un evento del socio de **150 personas**, donde el único
+   * camino era apretar `+` ciento cincuenta veces.
+   */
+  function poner(menu: string, v: string) {
+    const n = Math.max(0, Math.trunc(Number(v)) || 0);
+    setCuenta((c) => ({ ...c, [menu]: n }));
+  }
+
+  // **No hay "Otro menú" acá** (2026-11-05, lo pidió el cliente). Qué
+  // menús existen es una decisión del negocio —se publica en la tienda y se
+  // le pone precio en /menus—, no algo que se invente al anotar una reserva.
+  // La lista son los menús conocidos más los que ya traiga esta reserva.
+
+  async function guardar() {
+    setError('');
+    if (pideMotivo && !motivo.trim()) {
+      return setError('El día está cerrado: escribe el motivo de la corrección.');
+    }
+    if (!f.nombre.trim()) return setError('Falta el nombre.');
+    if (personas < 1) return setError('Tiene que haber al menos una persona en algún menú.');
+
+    setGuardando(true);
+    // Un contacto tapado (`privacidad.ts`) no viaja de vuelta: el servidor
+    // también lo descarta.
+    const { telefono, email, ...resto } = f;
+    const cuerpo = {
+      ...resto, ...(reserva?.contactoTapado ? {} : { telefono, email }), personas, menu: componerMenu(cuenta),
+      abonado: f.estadoPago === ESTADO_PAGO.abonado ? aMonto(f.abonado) || null : null,
+      // Sin precios puestos el sugerido da 0; eso se guarda en blanco, que
+      // es lo mismo que hacia antes de pedir el monto.
+      monto: monto > 0 ? monto : null,
+      // De qué ganado del socio sale, para que deje de aparecer como
+      // pendiente y el día no cuente esa gente dos veces.
+      ...(desdeCRM ? { eventoCRM: desdeCRM.id } : {}),
+      ...(pideMotivo ? { correccion: { motivo: motivo.trim() } } : {})
+    };
+    const res = reserva
+      ? await fetch(`/api/reservas/${reserva.fila}`,
+          { method: 'PATCH', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(cuerpo) })
+      : await fetch('/api/reservas',
+          { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(cuerpo) });
+    const d = await res.json();
+    setGuardando(false);
+    if (d.error) setError(d.error); else onListo();
+  }
+
+  return (
+    <Dialogo
+      titulo={desdeCRM ? 'Anotar el evento del CRM'
+                       : reserva ? 'Editar reserva' : 'Agregar reserva'}
+      onCerrar={onCancelar}>
+      <>
+        {/* Lo que el socio sabe, dicho una vez y arriba: el nombre ya está
+            puesto abajo, y la gente es el número que hay que repartir en los
+            menús. Va como aviso y no como campo porque **no se guarda**: lo
+            que se guarda son los menús que se escriban. */}
+        {desdeCRM && (
+          <p className="mt-3 rounded border border-cielo/40 bg-cielo/[0.08] px-3 py-2 text-[13px]">
+            Viene del <strong>CRM</strong>, con{' '}
+            <strong className="tabular-nums">{desdeCRM.personas}</strong>{' '}
+            {desdeCRM.personas === 1 ? 'persona' : 'personas'}. Reparte esa
+            gente en los menús de abajo; lo que el CRM no trae —los menús,
+            el monto, el contacto— se escribe acá.
+          </p>
+        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Campo etiqueta="Fecha" ancho><input type="date" {...campo('fecha')} className={ENTRADA} /></Campo>
+          <Campo etiqueta="Nombre" ancho>
+            <input type="text" {...campo('nombre')} className={ENTRADA} autoFocus />
+          </Campo>
+          {/* El teléfono y el correo se ordenan al salir del campo: una
+              reserva anotada a mano tiene que quedar con la misma forma que
+              una que llega de Shopify, o el día que se automatice algo
+              —mandar la confirmación, avisar un cambio— habría que adivinar
+              cuál es cuál. Ver `contacto.ts`. */}
+          {reserva?.contactoTapado ? (
+            <Campo etiqueta="Contacto" ancho>
+              <p className="py-2 text-[14px] text-hueso/70">
+                {reserva.telefono ? `📞 ${reserva.telefono} · ` : ''}El contacto de esta reserva lo ven
+                la administración y quien la atiende.
+              </p>
+            </Campo>
+          ) : (<>
+          <Campo etiqueta="Teléfono">
+            <CampoTelefono valor={f.telefono} className={ENTRADA}
+              etiqueta="Teléfono de quien reserva"
+              onCambio={(v) => setF({ ...f, telefono: v })} />
+          </Campo>
+          <Campo etiqueta="Email">
+            <input type="email" {...campo('email')} className={ENTRADA}
+              inputMode="email"
+              onBlur={(e) => setF({ ...f, email: correoNormal(e.target.value) })} />
+            {avisoCorreo(f.email) && (
+              <p className="mt-0.5 text-[11px] leading-tight text-ambar-texto/80">
+                {avisoCorreo(f.email)}
+              </p>
+            )}
+          </Campo>
+          </>)}
+          {/* **El pago, con botones y no con un desplegable** (2026-11-11,
+              lo pidió el cliente, estilo PlayStation). Tres que se ven a la
+              vez —Pagada · Abonada · Por pagar— con el mismo vocabulario de
+              Shopify y de las cotizaciones. "La reserva se cayó" va aparte:
+              es lo raro, y es lo que libera el cupo. */}
+          <div className="sm:col-span-2">
+            <p className="mb-1 text-xs uppercase tracking-wide text-hueso/60">¿Cómo viene el pago?</p>
+            {reserva && (
+              <p className="mb-2 text-[13px] text-hueso/70">
+                {origenDe(reserva)}
+                {deShopify && ' — el pago lo pone la tienda: acá solo se marca si la reserva se cayó.'}
+              </p>
+            )}
+            {!liberaCupo(f.estadoPago) && !deShopify && (
+              <div className="grid grid-cols-3 gap-2">
+                {COMO_VIENE.map((o) => {
+                  const elegido = f.estadoPago === o.estado;
+                  const tono = o.tono === 'verde' ? ['border-verde-fuerte', 'bg-verde-fuerte text-tinta', 'text-verde-texto']
+                    : o.tono === 'cielo' ? ['border-cielo-fuerte', 'bg-cielo-fuerte text-tinta', 'text-cielo-texto']
+                    : ['border-ambar-fuerte', 'bg-ambar-fuerte text-tinta', 'text-ambar-texto'];
+                  return (
+                    <button key={o.estado} type="button" aria-pressed={elegido}
+                      onClick={() => setF({ ...f, estadoPago: o.estado })}
+                      className={`tecla flex min-h-[72px] flex-col items-center justify-center rounded-xl border-2
+                                  px-1 py-2 text-center ${tono[0]} ${elegido ? tono[1] : `${tono[2]} hover:bg-hueso/5`}`}>
+                      <span aria-hidden className="text-[22px] font-extrabold leading-none">{o.icono}</span>
+                      <span className="mt-1 text-[15px] font-bold leading-tight">{o.palabra}</span>
+                      <span className={`text-[12px] leading-tight ${elegido ? '' : 'text-hueso/70'}`}>{o.glosa}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {!liberaCupo(f.estadoPago) && deShopify && (
+              <p className="inline-block rounded-full border-2 border-hueso/25 px-3 py-1 text-[15px] font-bold">
+                {pagoConGlosa(f.estadoPago)}
+              </p>
+            )}
+
+            {f.estadoPago === ESTADO_PAGO.abonado && !deShopify && (
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">¿Cuánto abonó?</span>
+                <input type="text" inputMode="numeric" value={f.abonado} placeholder="$"
+                  onChange={(e) => setF({ ...f, abonado: e.target.value })}
+                  className={`${ENTRADA} sm:w-48`} />
+                {aMonto(f.abonado) > 0 && monto > 0 && (
+                  <span className="mt-1 block text-[13px] text-hueso/70">
+                    Falta por cobrar: <strong>{'$' + Math.max(0, monto - aMonto(f.abonado)).toLocaleString('es-CL')}</strong>
+                  </span>
+                )}
+              </label>
+            )}
+
+            {/* Cómo pagó: botones rápidos que escriben el medio, y el texto
+                sigue libre para el detalle. Los medios los confirmó el
+                cliente; uno distinto se escribe. */}
+            {(f.estadoPago === ESTADO_PAGO.pagado || f.estadoPago === ESTADO_PAGO.abonado) && !deShopify && (
+              <div className="mt-3">
+                <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">¿Cómo pagó?</span>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {MEDIOS_RAPIDOS.map((m) => {
+                    const ya = f.notaPago.toLowerCase().startsWith(m.toLowerCase());
+                    return (
+                      <button key={m} type="button" aria-pressed={ya}
+                        onClick={() => {
+                          const resto = MEDIOS_RAPIDOS.reduce((t, x) =>
+                            t.toLowerCase().startsWith(x.toLowerCase()) ? t.slice(x.length).trimStart() : t, f.notaPago);
+                          setF({ ...f, notaPago: resto ? `${m} ${resto}` : m });
+                        }}
+                        className={`boton min-h-[44px] ${ya ? '!border-oro bg-oro/15 font-semibold' : ''}`}>{m}</button>
+                    );
+                  })}
+                </div>
+                <input type="text" {...campo('notaPago')} className={ENTRADA}
+                  placeholder="Transferencia 28/10, efectivo en el mesón…" />
+              </div>
+            )}
+
+            {/* Ya no viene: los tres rojos, aparte. */}
+            {liberaCupo(f.estadoPago) || seCayo ? (
+              <div className="mt-3 rounded-xl border-2 border-rojo-fuerte/50 bg-rojo/5 p-3">
+                <p className="text-[14px] font-semibold text-rojo-texto">
+                  Ya no viene: su lugar queda libre para otra persona.
+                </p>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {ESTADOS_QUE_LIBERAN.map((e) => (
+                    <button key={e} type="button" aria-pressed={f.estadoPago === e}
+                      onClick={() => setF({ ...f, estadoPago: e })}
+                      className={`tecla min-h-[48px] rounded-xl border-2 border-rojo-fuerte/70 px-2 text-[14px] font-bold ${
+                        f.estadoPago === e ? 'bg-rojo-fuerte text-white' : 'text-rojo-texto hover:bg-rojo/10'}`}>
+                      {pagoConGlosa(e)}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="boton mt-2 min-h-[44px]"
+                  onClick={() => {
+                    setSeCayo(false);
+                    setF({ ...f, estadoPago: liberaCupo(estadoOriginal) ? ESTADO_PAGO.pendiente : estadoOriginal });
+                  }}>
+                  No, sí viene
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setSeCayo(true)}
+                className="boton mt-3 min-h-[44px] !border-rojo-fuerte/60 text-rojo-texto">
+                La reserva se cayó…
+              </button>
+            )}
+          </div>
+
+          {/* La modalidad, cuando la hay: es un HECHO del pedido de Shopify,
+              así que se muestra y no se edita. En una reserva anotada a mano
+              no hay ninguna que mostrar. */}
+          {f.tipoPago && (
+            <Campo etiqueta="Modalidad comprada" ancho>
+              <p className="text-sm text-hueso/70">
+                {f.tipoPago}
+                <span className="text-hueso/45"> — lo escribió Shopify al comprar</span>
+              </p>
+            </Campo>
+          )}
+        </div>
+
+        {/* Los menús, con un contador cada uno. Las personas salen de acá:
+            no hay un campo aparte que pueda no calzar. */}
+        <div className="mt-5 border-t border-hueso/10 pt-4">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs uppercase tracking-wide text-hueso/60">Menús</span>
+            <span className="text-sm">
+              <strong className="tabular-nums">{personas}</strong>
+              <span className="text-hueso/50"> {personas === 1 ? 'persona' : 'personas'}</span>
+            </span>
+          </div>
+
+          {menus.length === 0 && (
+            <p className="mt-2 text-xs text-hueso/50">
+              Todavía no hay menús vendidos de dónde sacar los nombres. Escribe
+              el que corresponda abajo <strong>tal como se llama el producto en
+              Shopify</strong>, para que los totales del día los cuenten juntos.
+            </p>
+          )}
+
+          <div className="mt-2 space-y-2">
+            {menus.map((m) => (
+              <div key={m} className="flex items-center gap-2">
+                <span className="flex-1 text-sm">{m}</span>
+                <button type="button" onClick={() => sumar(m, -1)}
+                  aria-label={`Quitar uno de ${m}`}
+                  className="h-9 w-9 rounded border border-hueso/20 text-lg leading-none
+                             hover:border-oro disabled:opacity-30"
+                  disabled={!(cuenta[m] > 0)}>−</button>
+                <input type="number" min={0} inputMode="numeric"
+                  aria-label={`Cuántos de ${m}`}
+                  value={cuenta[m] ?? 0}
+                  onChange={(e) => poner(m, e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  className="h-9 w-16 rounded border border-hueso/20 bg-transparent
+                             text-center tabular-nums focus:border-oro" />
+                <button type="button" onClick={() => sumar(m, 1)}
+                  aria-label={`Agregar uno de ${m}`}
+                  className="h-9 w-9 rounded border border-hueso/20 text-lg leading-none
+                             hover:border-oro">+</button>
+              </div>
+            ))}
+          </div>
+
+        </div>
+
+        <div className="mt-4 border-t border-hueso/10 pt-4">
+          <label className="block">
+            <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">
+              Monto
+            </span>
+            <input type="number" min={0} step={1000} className={ENTRADA}
+              value={montoManual} placeholder={sugerido > 0 ? String(sugerido) : '—'}
+              onChange={(e) => setMontoManual(e.target.value)} />
+          </label>
+          <p className="mt-1 text-xs text-hueso/50">
+            {montoManual.trim() !== '' ? (
+              <>
+                Monto escrito a mano.{' '}
+                <button type="button" onClick={() => setMontoManual('')}
+                  className="text-oro hover:underline">Volver al calculado</button>
+                {sugerido > 0 && <> ({sugerido.toLocaleString('es-CL')})</>}.
+              </>
+            ) : sugerido > 0 ? (
+              <>Calculado con los precios de <a href="/menus" className="text-oro hover:underline">Menús</a>,
+              {enElLocal ? ' pagando en el local' : ' pagando por adelantado'}. Se puede corregir.</>
+            ) : (
+              <>No hay precios puestos en <a href="/menus" className="text-oro hover:underline">Menús</a>,
+              así que el monto queda en blanco salvo que lo escribas.</>
+            )}
+          </p>
+        </div>
+        {pideMotivo && (
+          <label className="mt-4 block rounded border border-ambar/50 p-3 text-[13px]
+                            font-semibold text-ambar-texto">
+            Este día está cerrado. Motivo de la corrección
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ej.: la reserva era de 6, no de 4"
+              className={`${ENTRADA} mt-1 font-normal text-hueso`} />
+          </label>
+        )}
+        {error && <p className="mt-3 text-sm font-semibold text-rojo-texto">{error}</p>}
+
+        <div className="mt-5 flex gap-3">
+          <button onClick={guardar} disabled={guardando}
+            className="boton boton-relleno min-h-[48px] text-[15px] disabled:opacity-40">
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
+          <button onClick={onCancelar}
+            className="boton">Cancelar</button>
+        </div>
+      </>
+    </Dialogo>
+  );
+}
+
+const ENTRADA =
+  'w-full rounded border border-hueso/20 bg-tinta px-3 py-2 text-sm ' +
+  'focus:border-oro focus:outline-none';
+
+function Campo({ etiqueta, ancho, children }: {
+  etiqueta: string; ancho?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <label className={`block ${ancho ? 'sm:col-span-2' : ''}`}>
+      <span className="mb-1 block text-xs uppercase tracking-wide text-hueso/60">{etiqueta}</span>
+      {children}
+    </label>
+  );
+}

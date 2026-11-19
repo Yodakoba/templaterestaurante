@@ -1,0 +1,210 @@
+/**
+ * La lógica de ocupación y semáforo. Sin dependencias y sin tocar la red: es
+ * lo que se puede probar de verdad, y por eso vive separada de las rutas.
+ */
+import type { Reserva, FechaHabil, Ocupacion, Semaforo } from './tipos.ts';
+import { ESTADO_PAGO, estaCerrado, esPrivada, esExclusiva } from './columnas.ts';
+import { liberaCupo } from './pagos.ts';
+import { SIN_POSIBLES, type Posibles } from './presupuestos.ts';
+import type { Fecha } from './fechas.ts';
+import { POR_DEFECTO } from './config.ts';
+import { personasEnLaMesa } from './mesa.ts';
+
+/**
+ * Los cortes del semáforo, como fracción de la capacidad.
+ *
+ * Amarillo entra en 0.6 y rojo en 0.85. Un día lleno es rojo, obviamente,
+ * pero el rojo empieza antes: a 51 de 60 ya no caben dos familias, y eso es
+ * lo que hay que ver de un vistazo.
+ */
+export const CORTES = POR_DEFECTO.cortes;
+
+/**
+ * Los cortes entran como parámetro con un valor por defecto, no como
+ * constante leída de adentro: así esto sigue siendo una función pura que se
+ * prueba con cortes de mentira, y el panel puede pasarle los de la planilla
+ * sin que este archivo sepa que existe una planilla.
+ */
+export function semaforo(
+  tomadas: number, capacidad: number, cortes = CORTES
+): Semaforo {
+  if (capacidad <= 0) return 'rojo';
+  const r = tomadas / capacidad;
+  if (r >= cortes.rojo) return 'rojo';
+  if (r >= cortes.amarillo) return 'amarillo';
+  return 'verde';
+}
+
+/**
+ * Una reserva reembolsada o anulada NO ocupa lugar: la silla se libera.
+ * Una pendiente SÍ ocupa: el cliente viene igual, paga al llegar.
+ *
+ * **Una que se cayó por cupo tampoco** (2026-11-12), aunque su estado diga
+ * *por pagar*: se mira su propia columna (`liberada`) y no el estado, porque
+ * el estado de una reserva de Shopify lo reescribe la tienda en cada pasada.
+ */
+export function ocupaLugar(r: Reserva): boolean {
+  if (String(r.liberada ?? '').trim()) return false;
+  return !liberaCupo(r.estadoPago);
+}
+
+/**
+ * **Si esta reserva tiene prioridad sobre el cupo** (2026-11-12, la regla del
+ * cliente): una reserva **sin pagar** queda sujeta a espacio; una **pagada o
+ * abonada** ya puso plata y no se suelta. Cuando un pago llena el día, las
+ * que no tienen prioridad son las que quedan en riesgo.
+ *
+ * Vale para todas, vengan de donde vengan —Shopify, a mano o una cotización
+ * ganada—: la regla es sobre la plata, no sobre el origen.
+ */
+export function tienePrioridad(r: Reserva): boolean {
+  if (!ocupaLugar(r)) return false;
+  const e = String(r.estadoPago || '').trim().toLowerCase();
+  return e === ESTADO_PAGO.pagado || e === ESTADO_PAGO.abonado;
+}
+
+/**
+ * Si todavía hay que cobrarle a esta reserva.
+ *
+ * **Se decide por el ESTADO DEL PAGO, no por la modalidad comprada**, y esa
+ * diferencia importa: una fila que diga "Pago directo" junto a "pending"
+ * significa que la regla de medios de pago de Shopify no aplicó y la persona
+ * eligió pagar en el local igual. Mirando la modalidad, esa plata no
+ * aparecería en ninguna parte y nadie se la cobraría en la puerta.
+ */
+export function faltaCobrar(r: Reserva): boolean {
+  if (!ocupaLugar(r)) return false;
+  return String(r.estadoPago || '').trim().toLowerCase() !== ESTADO_PAGO.pagado;
+}
+
+/**
+ * Si esta reserva ya pagó una parte: *Abonada* (`partially_paid`).
+ *
+ * **Es un subconjunto de las que faltan cobrar**, no un tercer grupo aparte
+ * de esa cuenta: a una abonada todavía hay que cobrarle el resto. Lo que la
+ * distingue es para quien planifica (2026-11-12, lo pidió el cliente): una
+ * reserva de 80 personas con más de la mitad abonada casi seguro viene, y
+ * contarla junto a las que no han pagado nada la escondía.
+ */
+export function estaAbonada(r: Reserva): boolean {
+  if (!ocupaLugar(r)) return false;
+  return String(r.estadoPago || '').trim().toLowerCase() === ESTADO_PAGO.abonado;
+}
+
+/** Un monto en pesos, en formato chileno: 218000 -> "$218.000". */
+export function enPesos(n: number): string {
+  return '$' + Math.round(n).toLocaleString('es-CL');
+}
+
+export function deEseDia(reservas: Reserva[], fecha: Fecha): Reserva[] {
+  return reservas.filter((r) => r.fecha === fecha);
+}
+
+/**
+ * El desglose de un día: cuántas personas, y de esas cuántas ya pagaron y a
+ * cuántas hay que cobrarles.
+ *
+ * **Se decide por el ESTADO del pago, no por la modalidad comprada**, que es
+ * lo mismo que hace faltaCobrar() y por el mismo motivo. Hasta el 2026-10-30
+ * esto miraba `Tipo Pago`, o sea qué variante se compró, mientras la tarjeta
+ * del calendario rotulaba el resultado como "X pagadas / X en el local". No
+ * era lo mismo: una reserva que compró la variante de pagar en línea y
+ * todavía dice "pending" se contaba como pagada, y esa plata no aparecía en
+ * ninguna parte. El rótulo tenía razón; el cálculo se había quedado atrás.
+ */
+/**
+ * **Lo cotizado y sin confirmar NO entra en ninguna cuenta de este archivo.**
+ *
+ * Viaja aparte, en `posibles`, y sale tal cual en dos campos propios. No se
+ * suma a `tomadas`, no descuenta de `quedan` y no mueve el semáforo, que es
+ * exactamente lo que pidió el cliente: *"no puede que solo por enviar un
+ * presupuesto se ocupen cupos confirmados dentro del día"*.
+ *
+ * Que llegue como parámetro y no se calcule acá adentro es lo que mantiene
+ * esta función pura y probable sin red — y además deja ver de un vistazo
+ * que lo posible entra y sale sin tocar nada del medio.
+ */
+export function ocupacionDe(
+  reservas: Reserva[],
+  dia: FechaHabil,
+  cortes = CORTES,
+  posibles?: Map<string, Posibles>
+): Ocupacion {
+  const delDia = deEseDia(reservas, dia.fecha).filter(ocupaLugar);
+
+  let pagadas = 0;
+  let porPagar = 0;
+  let abonadas = 0;
+  for (const r of delDia) {
+    // **Lo rectificado cambia los números del día** (2026-11-12, lo decidió
+    // el cliente): si llegaron 4 y no 6, el día cuenta 4. **Y la gente que
+    // se sumó a la mesa** (2026-11-17, `mesa.ts`) también cuenta.
+    const n = personasEnLaMesa(r);
+    if (faltaCobrar(r)) porPagar += n;
+    else pagadas += n;
+    if (estaAbonada(r)) abonadas += n;
+  }
+  const tomadas = pagadas + porPagar;
+
+  // La plata que hay que cobrar el mismo día, y cuántas reservas no tienen
+  // monto. Las segundas se cuentan aparte a propósito: un total que omite
+  // filas en silencio es peor que uno que dice cuántas le faltan.
+  let porCobrar = 0;
+  let sinMonto = 0;
+  for (const r of delDia) {
+    if (!faltaCobrar(r)) continue;
+    if (r.monto == null) sinMonto++;
+    else porCobrar += Number(r.monto) || 0;
+  }
+  // Una sola definición de "cerrado", compartida con la pantalla de fechas.
+  // Ver estaCerrado(): falla cerrando a propósito.
+  const bloqueada = estaCerrado(dia.estado);
+  // Distinto de cerrada: recibe reservas, pero el sitio no la ofrece.
+  const privada = esPrivada(dia.estado);
+  // Y distinto de privada a secas: el recinto completo, sin espacio para
+  // otro evento ese día. Las dos son ciertas en un día exclusivo.
+  const exclusiva = esExclusiva(dia.estado);
+
+  // Lo cotizado y sin confirmar. Se copia y no se usa: ver arriba.
+  const pos = posibles?.get(dia.fecha) ?? SIN_POSIBLES;
+
+  // **Las que tienen prioridad** (2026-11-12): pagadas y abonadas. Lo que
+  // queda para quien paga se cuenta solo contra ellas —una reserva sin pagar
+  // no le quita el lugar a quien paga—, y si el día se pasa del cupo, lo que
+  // sobra es el **sobrecupo**: lugares de reservas sin pagar que hay que
+  // decidir (ampliar el cupo o soltarlas). Ver `sobrecupo.ts`.
+  const prioritarias = pagadas + abonadas;
+
+  return {
+    fecha: dia.fecha,
+    capacidad: dia.capacidad,
+    tomadas,
+    quedan: Math.max(0, dia.capacidad - tomadas),
+    quedanPagando: Math.max(0, dia.capacidad - prioritarias),
+    // Solo en un día con cupo y abierto: uno que no está en el calendario
+    // tiene cupo 0 —no "lleno"—, y uno cerrado con gente ya se avisa aparte.
+    sobrecupo: dia.capacidad > 0 && !estaCerrado(dia.estado)
+      ? Math.max(0, tomadas - dia.capacidad) : 0,
+    pagadas,
+    porPagar,
+    abonadas,
+    porCobrar,
+    sinMonto,
+    privada,
+    exclusiva,
+    presupuestos: pos.presupuestos,
+    presupuestadas: pos.personas,
+    semaforo: bloqueada ? 'rojo' : semaforo(tomadas, dia.capacidad, cortes),
+    bloqueada,
+    notas: dia.notas || ''
+  };
+}
+
+export function ocupacionDeTodos(
+  reservas: Reserva[],
+  dias: FechaHabil[],
+  cortes = CORTES,
+  posibles?: Map<string, Posibles>
+): Ocupacion[] {
+  return dias.map((d) => ocupacionDe(reservas, d, cortes, posibles));
+}

@@ -1,0 +1,1101 @@
+'use client';
+
+/**
+ * Quiénes son el equipo y qué puestos existen.
+ *
+ * Las dos listas viven en la planilla, así que agregar a alguien no necesita
+ * un despliegue. Van en la misma pantalla porque se miran juntas: un puesto
+ * sin nadie que lo haga, o alguien sin puesto habitual, se ve de una sola
+ * pasada.
+ *
+ * **La columna "uno cada N personas" es la que hace útil al planificador.**
+ * Es lo que le permite al panel contestar "¿alcanza este equipo?" en vez de
+ * solo mostrar una lista. Arranca vacía a propósito: cuántos garzones por
+ * comensal se atiende bien es dato del negocio, y un número inventado haría
+ * que el panel diera consejos que nadie dio.
+ */
+import AvisoFijo from './AvisoFijo';
+import BotonGuardar from './BotonGuardar';
+import AvisoGuardado from './AvisoGuardado';
+import { usarGuardadoPorFicha } from './usarGuardadoPorFicha';
+import { avisar } from './AvisoFlotante';
+import AyudaCorta from './AyudaCorta';
+import MostrarDesactivados from './MostrarDesactivados';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import Ayuda from './Ayuda';
+import { Aviso } from './CalendarView';
+import { aEntero, esContratado, MODALIDAD, porNombre,
+         type Puesto, type Trabajador } from '@/lib/equipo';
+import { normalizar } from '@/lib/columnas';
+import DatosBancarios from './DatosBancarios';
+import { usarSoloMira, AvisoSoloMira } from './SesionCliente';
+import { bancoVacio, sePuedeTransferir, type Banco } from '@/lib/banco';
+import Dialogo from './Dialogo';
+import CampoTelefono from './CampoTelefono';
+import Campo from './Campo';
+import { copiarConAviso } from './AvisoFlotante';
+
+const ENTRADA =
+  'w-full rounded border border-hueso/20 bg-tinta px-2 py-1 text-sm ' +
+  'focus:border-oro focus:outline-none';
+
+export default function EquipoEditor() {
+  const [puestos, setPuestos] = useState<Puesto[] | null>(null);
+  const [gente, setGente] = useState<Trabajador[]>([]);
+  const [sinFicha, setSinFicha] = useState<string[]>([]);
+  /**
+   * Cuántos turnos guardados tiene cada persona.
+   *
+   * Es lo que decide si su ficha se puede quitar o solo desactivar. No se
+   * recalcula al guardar porque esta pantalla no toca los turnos: lo que se
+   * leyó al abrir sigue siendo cierto.
+   */
+  const [turnosDe, setTurnosDe] = useState<Map<string, number>>(new Map());
+  // Lo manda el servidor; la interfaz no lo adivina. Los puestos, los links
+  // personales y los sueldos son del administrador y de quien paga, y si el
+  // encargado viera esos controles el panel le estaría mintiendo: la ruta se
+  // los va a negar igual.
+  // **Una bandera por permiso, no un `esAdmin` para todo.** Hasta el
+  // 2026-11-01 la misma condición gobernaba tres cosas sin relación entre
+  // sí —la plata de la ficha, el link personal y la lista de puestos— así
+  // que mover una sola era imposible sin mover las tres. Hoy cada una dice
+  // qué gobierna, y abrirlas es cambiar la tabla de permisos y nada más.
+  const [verSueldos, setVerSueldos] = useState(false);
+  const [verLinks, setVerLinks] = useState(false);
+  const [editarPuestos, setEditarPuestos] = useState(false);
+  // **Vista gerencia** (2026-11-11): con el rol sin `equipo` las fichas se
+  // miran y no se tocan; sin `sueldos`, el pago y la cuenta tampoco.
+  const soloMira = usarSoloMira('equipo');
+  const soloSueldos = usarSoloMira('sueldos');
+  const [avisoLink, setAvisoLink] = useState('');
+  const [error, setError] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  /** Solo para los **puestos** (la ventana): esa lista sigue con botón. */
+  const [sucio, setSucio] = useState(false);
+  /**
+   * **El nombre se escribe aparte y se confirma** (2026-11-12): es la
+   * identidad de la ficha. Lo escrito y todavía no confirmado, por índice.
+   */
+  const [nombreEscrito, setNombreEscrito] = useState<Record<number, string>>({});
+  /** El nombre de la ficha nueva que se está por agregar, o `null`. */
+  const [nuevoNombre, setNuevoNombre] = useState<string | null>(null);
+  /**
+   * Qué ficha está abierta, o `null` si ninguna.
+   *
+   * **Cerradas por defecto** (2026-10-29, lo pidió el cliente): con cada
+   * ficha mostrando sus tres bloques —quién es, cuánto gana, dónde se le
+   * paga— diez trabajadores eran una página de varias pantallas, y para
+   * encontrar a alguien había que leerla entera. Cerrada, cada persona es
+   * una línea: nombre, puesto, teléfono. Lo demás aparece al abrirla.
+   *
+   * **Una a la vez.** Se edita una ficha, no se comparan dos: dejar varias
+   * abiertas devolvería la página larga de la que veníamos escapando.
+   */
+  const [abierta, setAbierta] = useState<number | null>(null);
+  /** Si está abierta la ventana de los puestos. */
+  const [verPuestos, setVerPuestos] = useState(false);
+  /**
+   * Si se muestran los desactivados.
+   *
+   * **Escondidos por defecto** (2026-10-30, lo pidió el cliente). Dar de baja
+   * a alguien no borra su ficha —sus turnos pasados son el registro de quién
+   * trabajó qué día— así que la lista solo crece, y con los años el equipo de
+   * hoy queda mezclado con el de antes. Quien entra a `/equipo` casi siempre
+   * viene a mirar a los que están.
+   */
+  const [verInactivos, setVerInactivos] = useState(false);
+  /**
+   * Lo escrito en el buscador de arriba de la lista (2026-11-12, lo pidió el
+   * cliente). Solo filtra lo que se dibuja: no lee la planilla ni toca lo
+   * que se guarda.
+   */
+  const [busca, setBusca] = useState('');
+  /**
+   * La lista tal como vino de la planilla, para poder decir **qué cambió**.
+   * No es estado: no se dibuja, solo se compara.
+   */
+  const comoEstaba = useRef<Trabajador[]>([]);
+
+  useEffect(() => {
+    fetch('/api/equipo').then((r) => r.json())
+      .then((d) => {
+        if (d.error) return setError(d.error);
+        setPuestos(d.puestos);
+        setGente(d.trabajadores);
+        comoEstaba.current = d.trabajadores;
+        setSinFicha(d.sinFicha ?? []);
+        const cuenta = new Map<string, number>();
+        for (const t of (d.turnos ?? []) as { trabajador: string }[]) {
+          const k = normalizar(t.trabajador);
+          cuenta.set(k, (cuenta.get(k) ?? 0) + 1);
+        }
+        setTurnosDe(cuenta);
+        setVerSueldos(!!d.verSueldos);
+        setVerLinks(!!d.verLinks);
+        setEditarPuestos(!!d.editarPuestos);
+      })
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  async function guardar() {
+    setGuardando(true);
+    try {
+      const r = await fetch('/api/equipo', {
+        method: 'PUT', headers: { 'content-type': 'application/json' },
+        // Los puestos solo viajan si quien guarda puede cambiarlos. Mandarlos
+        // igual haría fallar la petición entera y se perderían también los
+        // cambios de la lista de trabajadores, que sí puede hacer.
+        // **Solo los puestos** (2026-11-12): las fichas se guardan solas, de
+        // a una, por `/api/equipo/trabajador`. Mandar la lista entera acá
+        // podría pisar un autoguardado que va en camino.
+        body: JSON.stringify({ puestos })
+      });
+      const d = await r.json();
+      if (d.error) setError(d.error);
+      else {
+        // **Solo se reemplaza lo que el servidor dice haber guardado.** La
+        // respuesta trae `puestos` únicamente si venían en la petición, o
+        // sea nunca cuando guarda un encargado; tomarlo igual dejaba
+        // `puestos` en `undefined` y la pantalla entera caía al "Cargando…"
+        // del primer `return`, como si se hubiera roto. Un guardado que sale
+        // bien no puede verse peor que uno que falla.
+        if (d.puestos) setPuestos(d.puestos);
+        if (d.trabajadores) { setGente(d.trabajadores); comoEstaba.current = d.trabajadores; }
+        setError('');
+        setSucio(false);
+      }
+    } finally { setGuardando(false); }
+  }
+
+  /**
+   * **Cada ficha se guarda sola** (2026-11-12, regla del cliente:
+   * autoguardado por defecto). Teléfono, puesto, pago y cuenta bancaria van
+   * por `PATCH /api/equipo/trabajador` con solo lo que se tocó. El nombre,
+   * desactivar, quitar y los links siguen confirmándose a mano.
+   */
+  const fichas = usarGuardadoPorFicha<Partial<Trabajador>>(async (nombre, cambios) => {
+    const r = await fetch('/api/equipo/trabajador', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nombre, ...cambios })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) return d.error || 'No se pudo guardar.';
+    comoEstaba.current = comoEstaba.current.map((t) =>
+      normalizar(t.nombre) === normalizar(nombre) ? { ...t, ...cambios } : t);
+  });
+
+  if (error) return <Aviso error={error} />;
+  if (!puestos) return <p className="text-hueso/50">Cargando…</p>;
+
+  /**
+   * Crear, renovar o quitar el link de alguien.
+   *
+   * **Solo con la lista guardada.** Esta llamada escribe la pestaña entera
+   * desde lo que hay en la planilla, así que si quedaran ediciones sin
+   * guardar en pantalla, al recargar se perderían. Por eso los botones se
+   * apagan mientras haya cambios pendientes, en vez de que el trabajo
+   * desaparezca sin explicación.
+   */
+  async function link(nombre: string, accion: 'crear' | 'renovar' | 'quitar') {
+    if (accion === 'quitar' &&
+        !confirm(`¿Quitarle el acceso a ${nombre}? Su link deja de servir al instante.`)) {
+      return;
+    }
+    setAvisoLink('');
+    // Lo que esté en el reloj se manda antes: esta ruta reescribe la pestaña.
+    await fichas.forzar();
+    const r = await fetch('/api/equipo/link', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nombre, accion })
+    });
+    const d = await r.json();
+    if (d.error) return setAvisoLink(d.error);
+    setGente((antes) => antes.map((t) => (t.nombre === d.nombre ? { ...t, token: d.token } : t)));
+    if (accion !== 'quitar') copiar(d.token, nombre);
+    else setAvisoLink(`${nombre} ya no tiene acceso.`);
+  }
+
+  function copiar(token: string, nombre: string) {
+    const url = `${window.location.origin}/mi/${token}`;
+    copiarConAviso(url, `Link de ${nombre} copiado`, `Link de ${nombre}:`);
+  }
+
+  /**
+   * Subir o bajar un puesto en la lista.
+   *
+   * **El orden de esta lista es el orden en que se planifica un día**: el
+   * planificador dibuja los puestos tal como están acá, así que tenerlos en
+   * el orden en que se arma el turno ahorra buscar en cada tarjeta. Antes
+   * ese orden solo se podía cambiar reescribiendo los nombres de arriba
+   * abajo, o editando la planilla a mano.
+   *
+   * **Son flechas y no arrastrar**, a propósito: arrastrar en una tabla
+   * necesita o la API del navegador —que en un teléfono no funciona— o una
+   * librería, y este proyecto no agrega dependencias por una comodidad. Una
+   * flecha se aprieta igual con el dedo, y se puede usar con el teclado.
+   */
+  const moverPuesto = (i: number, hacia: -1 | 1) => {
+    const j = i + hacia;
+    if (j < 0 || j >= puestos.length) return;
+    const copia = puestos.map((p) => ({ ...p }));
+    [copia[i], copia[j]] = [copia[j], copia[i]];
+    setPuestos(copia); setSucio(true);
+  };
+
+  const cambiarPuesto = (i: number, campo: keyof Puesto, valor: string) => {
+    const copia = puestos.map((p) => ({ ...p }));
+    if (campo === 'nombre') copia[i].nombre = valor;
+    else copia[i].cadaCuantas = aEntero(valor);
+    setPuestos(copia); setSucio(true);
+  };
+  /**
+   * El mismo botón de guardar, arriba y abajo.
+   *
+   * **Arriba es el que se usa de verdad**: se corrige el sueldo de alguien
+   * en la primera fila y el único botón quedaba al final de la página, con
+   * la tabla de puestos en medio. Lo pidió el cliente y tenía razón — un
+   * guardado al que hay que irlo a buscar es un guardado que se olvida.
+   *
+   * Los dos hacen lo mismo porque **el panel guarda las dos listas juntas**,
+   * en una sola petición: no son dos formularios, es uno con dos tablas.
+   */
+
+
+  /**
+   * **Qué cambió en esta ficha**, en palabras.
+   *
+   * Lo pidió el cliente el 2026-10-30, y el ejemplo que dio es exactamente
+   * el caso: *"si se cambia algo en estos campos y es el número de teléfono
+   * sin querer, por lo menos tener el control sobre: hey, cambiaste algo"*.
+   * Un botón de guardar que solo dice "Guardar" no distingue entre corregir
+   * un puesto a propósito y haber tecleado encima de un teléfono sin darse
+   * cuenta. Nombrar el campo convierte el guardado en una confirmación.
+   *
+   * Se compara contra la lista tal como vino de la planilla, no contra el
+   * dibujado anterior: lo que importa es qué quedará distinto de lo
+   * guardado, no cuántas veces se tocó.
+   */
+  function cambiosDe(i: number): string[] {
+    const antes = comoEstaba.current[i];
+    const ahora = gente[i];
+    if (!ahora) return [];
+    if (!antes) return ['ficha nueva'];
+    const dif: string[] = [];
+    const mirar = (que: string, a: unknown, b: unknown) => {
+      if (String(a ?? '') !== String(b ?? '')) dif.push(que);
+    };
+    mirar('nombre', antes.nombre, ahora.nombre);
+    mirar('teléfono', antes.telefono, ahora.telefono);
+    mirar('puesto', antes.puesto, ahora.puesto);
+    mirar('activo', antes.activo, ahora.activo);
+    mirar('modalidad', antes.modalidad, ahora.modalidad);
+    mirar('jornada', antes.pagoJornada, ahora.pagoJornada);
+    mirar('valor hora', antes.valorHora, ahora.valorHora);
+    mirar('propina', antes.propina, ahora.propina);
+    if (JSON.stringify(antes.banco) !== JSON.stringify(ahora.banco)) {
+      dif.push('datos de transferencia');
+    }
+    return dif;
+  }
+
+  /**
+   * El guardado dentro de la tarjeta, **diciendo qué cambió**.
+   *
+   * Lo pidió el cliente: se corrige el teléfono de alguien arriba y el botón
+   * quedaba al final de la página, con todas las demás fichas en medio. Un
+   * guardado al que hay que irlo a buscar es un guardado que se olvida — y se
+   * olvida con algo escrito a medias, que es la peor forma de perderlo.
+   *
+   * **Reemplaza el aviso en gris** que decía "Guarda para administrar el
+   * link": el botón dice lo mismo y además lo hace.
+   *
+   * Aparece en todas las fichas y no solo en la que se editó, porque guardar
+   * manda **las dos listas completas** en una sola petición: no es el
+   * guardado de esta persona, es el de la pantalla. Lo que sí es de esta
+   * persona es la línea de arriba, que nombra sus campos tocados.
+   */
+  const guardarEnTarjeta = (i: number) => {
+    const t = gente[i];
+    const { estado, error: falla } = fichas.estadoDe(t.nombre);
+    const escrito = nombreEscrito[i];
+    const cambiaNombre = escrito !== undefined && escrito.trim() !== t.nombre;
+    return (
+      <>
+        {/* **El nombre se confirma** (2026-11-12): es lo único de la ficha
+            que no se guarda solo, porque sus turnos guardados siguen con el
+            nombre de antes. */}
+        {cambiaNombre && (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-[13px] text-ambar-texto">Cambiaste el nombre.</span>
+            <button type="button" className="boton boton-relleno" disabled={!escrito.trim()}
+              onClick={() => void renombrar(i)}>Guardar el nombre</button>
+            <button type="button" className="boton"
+              onClick={() => setNombreEscrito(({ [i]: _x, ...resto }) => resto)}>Deshacer</button>
+          </span>
+        )}
+        <AvisoGuardado estado={estado} error={falla} onReintentar={() => fichas.reintentar(t.nombre)} />
+      </>
+    );
+  };
+
+  /** Renombrar: pregunta, porque sus turnos siguen con el nombre de antes. */
+  async function renombrar(i: number) {
+    const t = gente[i];
+    const nuevo = (nombreEscrito[i] ?? '').trim();
+    if (!nuevo || nuevo === t.nombre) return;
+    const turnos = turnosDe.get(normalizar(t.nombre)) ?? 0;
+    if (!confirm(`¿Cambiar el nombre de ${t.nombre} a ${nuevo}?`
+      + (turnos > 0 ? `\n\nSus ${turnos} turnos guardados siguen con el nombre ${t.nombre}: quedarán sin ficha hasta corregirlos en la planilla.` : ''))) return;
+    await fichas.forzar();
+    const r = await fetch('/api/equipo/trabajador', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nombre: t.nombre, nuevoNombre: nuevo })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) { avisar(d.error || 'No se pudo cambiar el nombre.', 'atencion'); return; }
+    fichas.renombrar(t.nombre, nuevo);
+    setGente((g) => g.map((x, k) => (k === i ? { ...x, nombre: nuevo } : x)));
+    comoEstaba.current = comoEstaba.current.map((x) =>
+      normalizar(x.nombre) === normalizar(t.nombre) ? { ...x, nombre: nuevo } : x);
+    setNombreEscrito(({ [i]: _x, ...resto }) => resto);
+    avisar(`Ahora se llama ${nuevo}`);
+  }
+
+  /** Agregar a alguien: con su nombre, en el acto. Lo demás se guarda solo. */
+  async function agregar() {
+    const nombre = (nuevoNombre ?? '').trim();
+    if (!nombre) return;
+    setGuardando(true);
+    try {
+      const r = await fetch('/api/equipo/trabajador', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nombre })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) { avisar(d.error || 'No se pudo agregar.', 'atencion'); return; }
+      if (d.yaExistia) { avisar(d.aviso, 'atencion'); setNuevoNombre(null); return; }
+      setGente((g) => [...g, d.trabajador]);
+      comoEstaba.current = [...comoEstaba.current, d.trabajador];
+      // La ficha nueva se abre sola, para completarla ahí mismo.
+      setAbierta(gente.length);
+      setNuevoNombre(null);
+      avisar(`${nombre} agregado al equipo`);
+    } finally { setGuardando(false); }
+  }
+
+  /**
+   * Dar de baja o volver a activar a alguien, **en el acto**.
+   *
+   * No pasa por el botón de guardar, y eso es deliberado: se aprieta en la
+   * línea cerrada, con su confirmación, y entonces es una declaración y no
+   * un campo a medio escribir. Dejarlo como cambio pendiente tenía además
+   * un problema práctico: al desactivar, la línea desaparece de la lista
+   * —los inactivos van escondidos— y con ella el botón que la guardaba.
+   *
+   * Va por `PATCH`, que toca **una fila**: quien aprieta acá no tiene por
+   * qué mandar —ni pisar— lo que alguien haya escrito en otra ficha. Por lo
+   * mismo manda solo `activo`: el resto de los campos los conserva el
+   * servidor.
+   */
+  async function cambiarActivo(i: number, activo: boolean) {
+    const t = gente[i];
+    setGuardando(true);
+    await fichas.forzar();
+    try {
+      const r = await fetch('/api/equipo/trabajador', {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nombre: t.nombre, activo })
+      });
+      const d = await r.json();
+      if (d.error) return setError(d.error);
+      const copia = gente.map((x) => ({ ...x }));
+      copia[i].activo = activo;
+      setGente(copia);
+      // La foto también, o la ficha quedaría diciendo "cambiaste activo".
+      comoEstaba.current = comoEstaba.current.map(
+        (x, k) => (k === i ? { ...x, activo } : x));
+      setError('');
+      if (!activo) setAbierta(null);
+    } catch (e) { setError(String(e)); } finally { setGuardando(false); }
+  }
+
+  /** Sacar de la lista a quien no tiene ningún turno. También en el acto. */
+  async function quitarFicha(i: number) {
+    const t = gente[i];
+    setGuardando(true);
+    try {
+      if (t.nombre.trim()) {
+        const r = await fetch('/api/equipo/trabajador', {
+          method: 'DELETE', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ nombre: t.nombre })
+        });
+        const d = await r.json();
+        if (d.error) return setError(d.error);
+      }
+      setGente(gente.filter((_, k) => k !== i));
+      comoEstaba.current = comoEstaba.current.filter((_, k) => k !== i);
+      setAbierta(null);
+      setError('');
+    } catch (e) { setError(String(e)); } finally { setGuardando(false); }
+  }
+
+  const inactivos = gente.filter((t) => !t.activo).length;
+
+  const cambiarBanco = (i: number, banco: Banco) => {
+    const copia = gente.map((t) => ({ ...t }));
+    copia[i].banco = banco;
+    setGente(copia);
+    fichas.programar(gente[i].nombre, { banco });
+  };
+
+  const cambiarPersona = (i: number, campo: keyof Trabajador, valor: string | boolean) => {
+    // El nombre no se guarda solo: queda escrito hasta que se confirme.
+    if (campo === 'nombre') {
+      setNombreEscrito((e) => ({ ...e, [i]: String(valor) }));
+      return;
+    }
+    const copia = gente.map((t) => ({ ...t }));
+    if (campo === 'activo') copia[i].activo = Boolean(valor);
+    else if (campo === 'propina') copia[i].propina = Boolean(valor);
+    else if (campo === 'pagoJornada' || campo === 'valorHora') {
+      copia[i][campo] = aEntero(valor);
+    } else if (campo === 'modalidad') {
+      copia[i].modalidad = esContratado(valor) ? MODALIDAD.contratado : MODALIDAD.porTurno;
+      // Un contratado no cobra jornada: dejar el monto escrito sería dejar un
+      // número que ninguna cuenta usa, esperando a confundir a alguien.
+      if (esContratado(valor)) copia[i].pagoJornada = 0;
+      // `banco` no pasa por acá: es un objeto y tiene su propio cambiador.
+    } else if (campo !== 'token' && campo !== 'banco') {
+      copia[i][campo] = String(valor) as never;
+    }
+    setGente(copia);
+    // Solo lo que cambió viaja; un contratado lleva además su jornada en 0.
+    const cambio: Partial<Trabajador> = { [campo]: copia[i][campo] };
+    if (campo === 'modalidad') cambio.pagoJornada = copia[i].pagoJornada;
+    fichas.programar(gente[i].nombre, cambio);
+  };
+
+  /** El buscador: nombre, puesto y teléfono, sin tildes ni mayúsculas. */
+  const q = normalizar(busca);
+  const qDigitos = busca.replace(/\D/g, '');
+  const calza = (t: Trabajador) => !q
+    || normalizar(`${t.nombre} ${t.puesto} ${t.telefono}`).includes(q)
+    || (qDigitos.length >= 3 && String(t.telefono).replace(/\D/g, '').includes(qDigitos));
+  const visiblesBusca = gente.filter((t) => (t.activo || verInactivos) && calza(t)).length;
+  const ocultosBusca = verInactivos ? 0 : gente.filter((t) => !t.activo && calza(t)).length;
+
+  return (
+    <section>
+      <h1 className="mb-1 text-xl font-bold uppercase tracking-wide">
+        Equipo<Ayuda tema="equipo" />
+      </h1>
+      {/* **Dos frases y un link** (2026-11-01, lo pidió el cliente: *"los
+          textos de ayuda al inicio son muy largos"*). Acá arriba iban tres
+          párrafos explicando el link personal, los días de preparación y a
+          qué pantalla ir para cada cosa — o sea media pantalla de teléfono
+          antes de ver a la primera persona.
+
+          Lo que queda es lo que hay que saber para usar esta página: qué se
+          hace acá, y que el link personal está dentro de cada ficha. El
+          porqué largo del link vive en su `?`, que se pide; lo de los días
+          cerrados, en la ayuda de `/turnos`. */}
+      {/* Con su ✕ (2026-11-13): ver `AvisoFijo`. La segunda línea, solo para
+          quien de verdad tiene ese bloque: el administrador y quien paga
+          (permiso `links`). Al encargado no se le muestra, porque
+          prometerle algo que no va a encontrar es peor que no decir nada. */}
+      <AvisoFijo clave="equipo-intro" className="mb-4 max-w-2xl">
+        Acá puedes agregar y editar trabajadores.
+        {verLinks && <> Dentro de cada trabajador puedes copiar su <strong>link personal</strong>.</>}
+      </AvisoFijo>
+      <p className="mb-6">
+        <a href="/turnos" className="tecla boton">Ver el mes completo</a>
+      </p>
+
+      {sinFicha.length > 0 && (
+        <div className="mb-6 rounded border border-ambar/50 bg-ambar/5 p-4">
+          <p className="text-sm font-semibold text-ambar-texto">
+            Hay {sinFicha.length === 1 ? 'alguien asignado' : 'gente asignada'} a
+            turnos que no está en esta lista.
+          </p>
+          <p className="mt-1 text-sm text-hueso/70">
+            Pasa al renombrar a una persona que ya tenía turnos: los turnos
+            viejos siguen con el nombre anterior. Agrégala abajo con ese
+            nombre exacto, o corrige el nombre en la pestaña{' '}
+            <code>Turnos</code> de la planilla.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {sinFicha.map((n) => (
+              <code key={n} className="rounded bg-hueso/10 px-2 py-1 text-sm">{n}</code>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-widest text-hueso/60">
+        Trabajadores
+      </h2>
+      {/* El párrafo que explicaba el link personal se fue al `?` que está
+          al lado del botón, dentro de cada ficha: es donde se hace la
+          pregunta, y acá arriba eran seis líneas que había que saltarse
+          para llegar a la lista. */}
+      {avisoLink && (
+        <p className="mb-4 rounded border border-hueso/20 bg-panel px-3 py-2 text-sm">
+          {avisoLink}
+        </p>
+      )}
+      {/* **Una tarjeta por persona, no una tabla.**
+          Fue tabla mientras cada trabajador era una fila. Al repartir los
+          datos en tres líneas —quién es, cuánto gana, dónde se le paga— la
+          tabla dejó de ayudar: las líneas de uno y las del siguiente se
+          tocaban, y sin un borde que las separe no se ve dónde termina cada
+          persona. Esto además no es una tabla de datos para comparar, es un
+          formulario por ficha, y una tarjeta es lo que corresponde.
+
+          Cada campo lleva su rótulo encima y su ancho propio, que es lo que
+          evita el problema de siempre: el nombre cediéndole el espacio a
+          todo lo demás. */}
+      {/* **Los desactivados se esconden** (2026-10-30, lo pidió el cliente).
+          Una ficha dada de baja no se borra —sus turnos son el registro de
+          quién trabajó qué día— así que esta lista solo crece, y el equipo
+          de hoy termina mezclado con el de hace dos años. El botón los
+          trae de vuelta —desde el 2026-11-10 es un botón grande, `MostrarDesactivados`, y no una casilla—, y dice cuántos son para que nadie los dé por
+          perdidos. */}
+      {/* **El buscador va arriba de toda la lista** (2026-11-12, lo pidió el
+          cliente). Mismo criterio que `BuscarPersona` y el del informe: sin
+          tildes ni mayúsculas, así que "perez" encuentra a José Pérez. Busca
+          en el nombre, el puesto y el teléfono —este último también por los
+          dígitos solos, para que "12345678" encuentre "+56 9 1234 5678"—.
+          Filtra lo que ya está cargado: no cuesta lecturas. */}
+      {gente.length > 0 && (
+        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nombre, puesto o teléfono"
+          aria-label="Buscar trabajador"
+          className="mb-3 min-h-[44px] w-full rounded-xl border-2 border-hueso/20 bg-tinta px-3
+                     text-[15px] focus:border-oro focus:outline-none sm:max-w-md" />
+      )}
+      <MostrarDesactivados cuantos={inactivos} visible={verInactivos}
+        onCambio={(v) => { setVerInactivos(v); setAbierta(null); }} />
+      {/* Si toda la página se mira, ya lo dice la barra de arriba; acá
+          solo el caso parcial: edita las fichas, no el pago ni la cuenta. */}
+      {!soloMira && verSueldos && soloSueldos && (
+        <AvisoSoloMira que="el pago y la cuenta de cada ficha" />
+      )}
+      {/* **La lista se muestra alfabética** (2026-11-01, lo pidió el
+          cliente). Venía en el orden de la planilla, o sea en el que se
+          grabó cada ficha: para encontrar a alguien entre quince había que
+          leerla entera, igual que pasaba en el desplegable del planificador.
+
+          **Se ordena lo que se dibuja, no lo que se guarda**, y esa es toda
+          la diferencia con la advertencia que este archivo traía escrita:
+          `i` sigue siendo la posición real en la lista que se manda, porque
+          cada ficha se lleva la suya al ordenarse. Todo lo que edita —un
+          campo, quitarla, desactivarla— la usa, así que ordenar el array de
+          verdad habría hecho que editar a alguien escribiera sobre otro.
+
+          **Las fichas sin nombre van al final**, que es donde está el botón
+          de agregar: una recién creada que saltara al principio se perdería
+          de vista justo después de apretarlo. */}
+      <ul className="space-y-3">
+        {gente
+          .map((t, i) => ({ t, i }))
+          .sort((a, b) => {
+            const va = !a.t.nombre.trim(), vb = !b.t.nombre.trim();
+            if (va !== vb) return va ? 1 : -1;
+            return porNombre(a.t, b.t);
+          })
+          .map(({ t, i }) => {
+          // Los inactivos se filtran DENTRO del map y no antes, por lo mismo:
+          // con un `filter` previo sobre el array original, esconder a uno le
+          // cambiaría el índice a los de abajo.
+          if (!t.activo && !verInactivos) return null;
+          // La ficha abierta no se esconde aunque deje de calzar: cambiarle el
+          // nombre o el puesto a medio escribir la haría desaparecer.
+          if (!calza(t) && abierta !== i) return null;
+          const turnos = turnosDe.get(normalizar(t.nombre)) ?? 0;
+          return (
+            <li key={i}
+              className={`overflow-hidden rounded border ${t.activo
+                ? 'border-hueso/15 bg-panel'
+                : 'border-hueso/10 bg-transparent opacity-60'}`}>
+
+              {/* **La ficha cerrada es una línea.** Nombre, puesto y teléfono
+                  alcanzan para encontrar a alguien; lo demás —el sueldo, la
+                  cuenta bancaria— aparece al abrirla. Con todo a la vista,
+                  diez personas eran una página que había que leer entera.
+
+                  El resumen es un botón y no un `<summary>` porque la ficha
+                  que se acaba de agregar tiene que abrirse sola: con
+                  `<details>` eso se controla igual desde React, y entonces el
+                  elemento no aporta nada que no cueste explicar. */}
+              <div className="flex items-center gap-2 pr-2">
+                <button type="button" aria-expanded={abierta === i}
+                  onClick={() => setAbierta(abierta === i ? null : i)}
+                  className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1
+                             px-3 py-2.5 text-left hover:bg-hueso/5">
+                  <span aria-hidden className="w-3 text-base leading-none text-hueso/40">
+                    {abierta === i ? '−' : '+'}
+                  </span>
+                  <span className="font-semibold">
+                    {t.nombre.trim() || <span className="text-hueso/40">Sin nombre</span>}
+                  </span>
+                  <span className="text-[13px] text-hueso/70">{t.puesto || 'sin puesto'}</span>
+                  <span className="text-[13px] text-hueso/60">{t.telefono}</span>
+                  {!t.activo && (
+                    <span className="rounded-full border border-hueso/25 px-2 py-0.5
+                                     text-[13px] font-semibold text-hueso/60">
+                      inactivo
+                    </span>
+                  )}
+                  {/* Lo que falta para poder pagarle se dice **con la ficha
+                      cerrada**: adentro ya lo avisa `DatosBancarios`, pero
+                      cerrada es donde se mira la lista antes de pagar. */}
+                  {verSueldos && t.nombre.trim() && !sePuedeTransferir(t.banco) && (
+                    <span className="rounded-full border border-ambar/50 px-2 py-0.5
+                                     text-[13px] font-semibold text-ambar-texto">
+                      falta su cuenta
+                    </span>
+                  )}
+                </button>
+
+                {/* **A la derecha va dar de baja, no "abrir"** (2026-10-30,
+                    lo pidió el cliente). Decir *abrir* al lado de una línea
+                    que ya se abre entera al apretarla no agregaba nada: era
+                    una segunda forma de hacer lo mismo ocupando el único
+                    lugar donde cabe una acción de verdad.
+
+                    Qué ofrece depende de si esa persona tiene historia:
+                    quitar la ficha de alguien que ya trabajó dejaría sus
+                    turnos con un nombre que no está en ninguna parte, y esos
+                    turnos son el registro de quién trabajó qué día. */}
+                {soloMira ? null : turnos === 0 ? (
+                  <button
+                    onClick={() => {
+                      if (t.nombre.trim() && !confirm(
+                        `¿Sacar a ${t.nombre} de la lista? Todavía no tiene ningún `
+                        + 'turno guardado, así que no se pierde ninguna historia.')) return;
+                      void quitarFicha(i);
+                    }}
+                    className="boton shrink-0 hover:border-rojo-fuerte hover:text-rojo-texto"
+                    title="Todavía no tiene ningún turno guardado">Quitar</button>
+                ) : t.activo ? (
+                  <button
+                    onClick={() => {
+                      if (!confirm(
+                        `¿Desactivar a ${t.nombre}? Sale del planificador y su link `
+                        + 'personal deja de abrir. Sus turnos se conservan, y se puede '
+                        + 'volver a activar cuando quieras.')) return;
+                      void cambiarActivo(i, false);
+                    }}
+                    className="boton shrink-0 hover:border-rojo-fuerte hover:text-rojo-texto"
+                    title={`Tiene ${turnos} turnos guardados, así que su ficha `
+                           + 'no se quita: se desactiva y conserva su historia'}>
+                    Desactivar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void cambiarActivo(i, true)}
+                    className="boton shrink-0 border-oro/50 text-oro hover:bg-oro/10"
+                    title="Vuelve al planificador y su link personal abre de nuevo">
+                    Activar
+                  </button>
+                )}
+              </div>
+
+              {abierta === i && (
+                <div className="border-t border-hueso/10 p-3">
+                <fieldset disabled={soloMira} className="m-0 min-w-0 border-0 p-0">
+
+                {/* Quién es, y cómo se entra a su link. */}
+                <div className="flex flex-wrap items-start gap-3">
+                  <Campo etiqueta="Nombre" ancho="w-56">
+                    <input type="text" value={nombreEscrito[i] ?? t.nombre} className={ENTRADA}
+                      placeholder="Nombre y apellido"
+                      aria-label={`Nombre de la persona ${i + 1}`}
+                      onChange={(e) => cambiarPersona(i, 'nombre', e.target.value)} />
+                  </Campo>
+                  <Campo etiqueta="Teléfono" ancho="w-44">
+                    <CampoTelefono valor={t.telefono} className={ENTRADA}
+                      etiqueta={`Teléfono de ${t.nombre || 'esta persona'}`}
+                      onCambio={(v) => cambiarPersona(i, 'telefono', v)} />
+                  </Campo>
+                  <Campo etiqueta="Puesto habitual" ancho="w-44">
+                    {/* Un select y no texto libre: el puesto habitual solo
+                        preselecciona en el planificador, y si está escrito de
+                        otra forma no preselecciona nada. */}
+                    <select value={t.puesto} className={ENTRADA}
+                      aria-label={`Puesto habitual de ${t.nombre || 'esta persona'}`}
+                      onChange={(e) => cambiarPersona(i, 'puesto', e.target.value)}>
+                      <option value="">—</option>
+                      {puestos.map((p) => (
+                        <option key={p.nombre} value={p.nombre}>{p.nombre}</option>
+                      ))}
+                      {/* Si tiene uno que ya no está en la lista, igual se
+                          muestra: si no, guardar lo borraría sin avisar. */}
+                      {t.puesto && !puestos.some((p) => p.nombre === t.puesto) && (
+                        <option value={t.puesto}>{t.puesto} (ya no existe)</option>
+                      )}
+                    </select>
+                  </Campo>
+                  {/* **La casilla "Activo" se sacó de acá adentro** (2026-10-30):
+                      con el botón *Desactivar* en la línea de la persona eran
+                      dos controles para lo mismo, a dos centímetros y con
+                      distinto peso. Uno de los dos tenía que irse, y el que
+                      se queda es el que se ve sin abrir la ficha. */}
+
+                  <span className="flex-1" />
+
+                  <div className="flex flex-wrap items-center gap-3 self-center pt-4 text-[13px]">
+                    {guardarEnTarjeta(i)}
+                    {/* Dar de baja vive **en la línea de la persona**, abierta
+                        o cerrada: ver arriba. Acá adentro quedaban los dos
+                        controles a dos centímetros y con el mismo peso. */}
+                  </div>
+                </div>
+
+                {/* **El link personal, con el peso que tiene** (2026-11-01, lo
+                    pidió el cliente: que esté *"bien a la vista, bien
+                    PlayStation"*, y con la misma importancia que *Desactivar*).
+
+                    Eran tres textos en gris al costado de los campos de
+                    arriba, del mismo tamaño que un rótulo y sin nada que
+                    dijera que se aprietan — la cosa exacta que la regla del
+                    panel prohíbe. Ahora es un bloque propio, como Pago y
+                    Transferencia, con su botón relleno: crear el link es a lo
+                    que se vino cuando se abre esta ficha por primera vez.
+
+                    El `?` de al lado explica **qué ve la persona al abrirlo**,
+                    que es la pregunta que se hace justo antes de mandarlo por
+                    WhatsApp. Ahí se fue el párrafo que estaba arriba de la
+                    lista.
+
+                    Los links se administran **con la lista guardada**: esta
+                    llamada reescribe la pestaña entera desde la planilla, así
+                    que con ediciones en pantalla se perderían. Por eso con
+                    cambios pendientes el bloque lo dice en vez de desaparecer
+                    sin explicación. */}
+                {verLinks && (
+                  <div className="mt-3 border-t border-hueso/10 pt-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* **El `?` va fuera del rótulo.** Adentro le comía 30px
+                          a la caja y "LINK PERSONAL" se partía en dos líneas
+                          mientras "PAGO" y "TRANSFERENCIA" iban en una. */}
+                      <span className="w-36 whitespace-nowrap text-[13px] font-semibold
+                                       uppercase tracking-widest text-hueso/60">
+                        Link personal
+                      </span>
+                      <Ayuda tema="link" />
+                      {!t.nombre.trim() ? (
+                        <span className="text-[13px] text-hueso/55">
+                          Ponle nombre y guarda para poder crearle su link.
+                        </span>
+                      ) : nombreEscrito[i] !== undefined && nombreEscrito[i].trim() !== t.nombre ? (
+                        <span className="text-[13px] text-ambar-texto/85">
+                          Guarda el nombre para administrar su link.
+                        </span>
+                      ) : (
+                        <>
+                          {/* **Un solo botón, y siempre el mismo** (2026-11-04,
+                              lo pidió el cliente: *"se debería copiar lo más
+                              fácil posible… si se puede hacerlo sin crear el
+                              link y luego tener que copiarlo, sino
+                              directamente copiar el link"*).
+
+                              Eran dos según el estado —*Crear* la primera vez,
+                              *Copiar* después— y esa diferencia **era nuestra,
+                              no suya**: por dentro `crear` ya copiaba. Quien
+                              abre una ficha para mandarle el link a alguien
+                              viene a una sola cosa.
+
+                              **El nombre se queda en "link personal"**: la
+                              página ya no es solo lo que ganó, también son los
+                              turnos que vienen, así que llamarlo "sus datos de
+                              sueldo" la nombraría a medias.
+
+                              No contradice que un link sin contraseña sea una
+                              decisión: eso vale para la **planilla semanal**,
+                              que abre datos de todo el equipo. Éste es de una
+                              persona y **nace para mandarse**, igual que el
+                              documento de un presupuesto. */}
+                          <button
+                            onClick={() => (t.token
+                              ? copiar(t.token, t.nombre)
+                              : void link(t.nombre, 'crear'))}
+                            className="boton boton-relleno">Copiar link personal</button>
+                          {t.token && (
+                            <>
+                          <button onClick={() => link(t.nombre, 'renovar')}
+                            className="boton"
+                            title="Crea uno nuevo; el anterior deja de servir">Renovar</button>
+                          {/* "Quitar link", con la palabra completa: en esta
+                              misma tarjeta hay otro botón que quita a la
+                              persona, y dos "Quitar" a dos centímetros de
+                              distancia son una confusión esperando a pasar. */}
+                          <button onClick={() => link(t.nombre, 'quitar')}
+                            className="boton hover:border-rojo-fuerte hover:text-rojo-texto">
+                            Quitar link
+                          </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Cuánto gana. El administrador y quien paga (`sueldos`). */}
+                {verSueldos && (
+                  <fieldset disabled={soloMira || soloSueldos}
+                    className="m-0 mt-3 min-w-0 border-0 border-t border-hueso/10 p-0 pt-3">
+                    <div className="flex flex-wrap items-start gap-3">
+                      <span className="w-36 pt-4 text-[13px] font-semibold uppercase
+                                       tracking-widest text-hueso/60">Pago</span>
+                      <Campo etiqueta="Modalidad" ancho="w-48" ayuda="modalidad">
+                        <select value={t.modalidad} className={ENTRADA}
+                          aria-label={`Cómo se le paga a ${t.nombre || 'esta persona'}`}
+                          onChange={(e) => cambiarPersona(i, 'modalidad', e.target.value)}>
+                          <option value={MODALIDAD.porTurno}>Por turno</option>
+                          <option value={MODALIDAD.contratado}>Contratado</option>
+                        </select>
+                      </Campo>
+                      <Campo etiqueta="Jornada" ancho="w-32">
+                        {/* A un contratado no se le paga por jornada, así que
+                            el campo no se deja escribir: un monto ahí no se
+                            usaría en ninguna cuenta y haría creer que sí. */}
+                        <input type="number" min={0} step={1000} className={ENTRADA}
+                          value={esContratado(t.modalidad) ? '' : (t.pagoJornada || '')}
+                          placeholder={esContratado(t.modalidad) ? 'no aplica' : '—'}
+                          disabled={esContratado(t.modalidad)}
+                          aria-label={`Jornada de ${t.nombre || 'esta persona'}`}
+                          onChange={(e) => cambiarPersona(i, 'pagoJornada', e.target.value)} />
+                      </Campo>
+                      <Campo etiqueta="Hora extra" ancho="w-32">
+                        <input type="number" min={0} step={500} className={ENTRADA}
+                          value={t.valorHora || ''} placeholder="—"
+                          aria-label={`Valor de la hora extra de ${t.nombre || 'esta persona'}`}
+                          onChange={(e) => cambiarPersona(i, 'valorHora', e.target.value)} />
+                      </Campo>
+                      <label className="flex items-center gap-2 self-center pt-4">
+                        <input type="checkbox" checked={t.propina}
+                          className="h-4 w-4 accent-oro"
+                          aria-label={`${t.nombre || 'Esta persona'} entra en el reparto de propina`}
+                          onChange={(e) => cambiarPersona(i, 'propina', e.target.checked)} />
+                        <span className="text-[13px] text-hueso/70">
+                          Entra en la propina
+                        </span>
+                      </label>
+                      <span className="self-center pt-4"><AyudaCorta tema="propinaFicha" /></span>
+                    </div>
+                  </fieldset>
+                )}
+
+                {/* Dónde se le transfiere. También `sueldos`. */}
+                {verSueldos && (
+                  <fieldset disabled={soloMira || soloSueldos}
+                    className="m-0 mt-3 min-w-0 border-0 border-t border-hueso/10 p-0 pt-3">
+                    <div className="flex flex-wrap items-start gap-3">
+                      <span className="w-36 pt-4 text-[13px] font-semibold uppercase
+                                       tracking-widest text-hueso/60">Transferencia</span>
+                      <div className="min-w-[20rem] flex-1">
+                        <DatosBancarios
+                          banco={t.banco} nombre={t.nombre}
+                          onCambio={(b) => cambiarBanco(i, b)} />
+                      </div>
+                    </div>
+                  </fieldset>
+                )}
+                </fieldset>
+                </div>
+              )}
+            </li>
+          );
+        })}
+        {q && visiblesBusca === 0 && (
+          <li className="rounded-xl border-2 border-hueso/15 px-4 py-3 text-[15px] text-hueso/70">
+            Nadie calza con “{busca.trim()}”.
+            {ocultosBusca > 0 && (
+              <> {ocultosBusca === 1 ? 'Hay 1 desactivado que calza' : `Hay ${ocultosBusca} desactivados que calzan`}:
+                muéstralos con el botón de arriba.</>
+            )}
+          </li>
+        )}
+        {gente.length === 0 && (
+          <li className="rounded border border-dashed border-hueso/15 p-6 text-sm text-hueso/50">
+            Todavía no hay nadie. Apreta <strong>Agregar trabajador</strong>.
+          </li>
+        )}
+      </ul>
+      {!soloMira && (
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {/* **Agregar pide el nombre y crea la ficha en el acto** (2026-11-12):
+            lo demás se completa adentro y se guarda solo. */}
+        {nuevoNombre === null ? (
+          <button type="button" onClick={() => setNuevoNombre('')} className="boton">
+            + Agregar trabajador
+          </button>
+        ) : (
+          <form className="flex flex-wrap items-center gap-2"
+            onSubmit={(e) => { e.preventDefault(); void agregar(); }}>
+            <input type="text" autoFocus value={nuevoNombre} placeholder="Nombre y apellido"
+              aria-label="Nombre del trabajador nuevo" className={`${ENTRADA} w-56`}
+              onChange={(e) => setNuevoNombre(e.target.value)} />
+            <button type="submit" className="boton boton-relleno"
+              disabled={!nuevoNombre.trim() || guardando}>
+              {guardando ? 'Agregando…' : 'Agregar'}
+            </button>
+            <button type="button" className="boton" onClick={() => setNuevoNombre(null)}>Cancelar</button>
+          </form>
+        )}
+        <span className="flex-1" />
+        <span className="text-[13px] text-hueso/60">Los cambios de cada ficha se guardan solos.</span>
+      </div>
+      )}
+
+      {verSueldos && (
+        <AvisoFijo clave="equipo-propina" className="mt-4 max-w-2xl">
+          <strong>La propina se reparte en partes iguales</strong> entre
+          quienes vinieron ese día y tienen esta casilla marcada. Desmarcarla
+          deja a alguien en la planilla de trabajo pero fuera del reparto,
+          que es la excepción que existe — por eso viene marcada por defecto.
+        </AvisoFijo>
+      )}
+      {verSueldos && (
+        <AvisoFijo clave="equipo-contratado" className="mt-3 max-w-2xl">
+          <strong>Por turno</strong> se le paga por jornada trabajada, y cada
+          turno suma al costo del día. <strong>Contratado</strong> tiene
+          sueldo, y ese sueldo no sale de acá: sus turnos no suman jornada,
+          porque contarlos sería pagar dos veces lo mismo. A un contratado sí
+          se le pueden anotar horas extra y ajustes, que se pagan aparte.
+        </AvisoFijo>
+      )}
+
+      {/* **Los puestos salen de la página y entran en una ventana**
+          (2026-10-29, lo pidió el cliente). Son una tabla de diez o doce
+          filas que casi nunca se toca, y estaba debajo de la lista de
+          trabajadores: entre las dos, `/equipo` era una página larguísima
+          que había que recorrer entera para llegar a cualquier cosa. Acá
+          queda un botón, y la tabla se abre cuando de verdad hace falta. */}
+      <div className="mt-10 rounded border border-hueso/15 bg-panel p-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <button onClick={() => setVerPuestos(true)}
+            className="boton font-semibold hover:text-oro">
+            {editarPuestos ? 'Administrar puestos' : 'Ver los puestos'}
+          </button>
+          <span className="text-sm text-hueso/50">
+            {puestos.length} {puestos.length === 1 ? 'puesto' : 'puestos'}
+            {' '}· {puestos.map((x) => x.nombre).filter(Boolean).slice(0, 4).join(' · ')}
+            {puestos.length > 4 && <> …</>}
+          </span>
+        </div>
+      </div>
+
+      <AvisoFijo clave="equipo-desactivar" className="mt-6 max-w-2xl">
+        <strong>A quien ya trabajó se le desactiva, no se le quita.</strong>{' '}
+        <em>Desactivar</em> lo saca del planificador y le cierra su link
+        personal, pero conserva sus turnos, que son el registro de quién
+        trabajó qué día. <em>Quitar</em> aparece solo mientras la persona no
+        tenga ningún turno guardado — la fila escrita por error, básicamente.
+      </AvisoFijo>
+
+      {verPuestos && (
+        <Dialogo titulo="Puestos" ancho="max-w-3xl"
+                 onCerrar={() => setVerPuestos(false)}>
+          {!editarPuestos && (
+            <p className="mt-3 max-w-2xl text-sm text-hueso/60">
+              Los puestos y su regla los cambian el administrador y quien
+              hace los pagos. Acá se ven para poder asignar turnos.
+            </p>
+          )}
+          <p className="mt-3 max-w-2xl text-sm text-hueso/60">
+            <strong>Uno cada N personas</strong> es cuánta gente hace falta en
+            ese puesto según cuántos comensales haya. Con 10 en garzón, un día
+            de 44 personas sugiere 5. <strong>En blanco el panel no opina</strong>,
+            que es lo correcto mientras el número no lo hayas puesto tú.
+          </p>
+          {/* **El orden de esta lista es el orden del planificador**, así que
+              se puede acomodar al orden en que se arma un turno. */}
+          <p className="mt-2 max-w-2xl text-[13px] text-hueso/70">
+            El orden manda: así salen en la ventana de planificar un día.
+            Muévelos con las flechas.
+          </p>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[34rem] table-fixed text-sm">
+              <thead className="text-left text-[13px] font-semibold uppercase
+                                tracking-wide text-hueso/60">
+                <tr className="border-b border-hueso/10">
+                  {editarPuestos && <th className="w-16 py-2 pr-2">Orden</th>}
+                  <th className="py-2 pr-3">Puesto</th>
+                  <th className="w-44 py-2 pr-3">Uno cada N personas</th>
+                  <th className="w-16 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {puestos.map((p, i) => (
+                  <tr key={i} className="border-b border-hueso/5">
+                    {editarPuestos && (
+                      <td className="whitespace-nowrap py-2 pr-2 text-hueso/50">
+                        <button onClick={() => moverPuesto(i, -1)} disabled={i === 0}
+                          className="rounded px-2 py-1.5 text-base hover:bg-hueso/5 hover:text-oro disabled:opacity-25"
+                          title={`Subir ${p.nombre || 'este puesto'}`}>
+                          <span aria-hidden>↑</span>
+                          <span className="sr-only">Subir {p.nombre}</span>
+                        </button>
+                        <button onClick={() => moverPuesto(i, 1)}
+                          disabled={i === puestos.length - 1}
+                          className="rounded px-2 py-1.5 text-base hover:bg-hueso/5 hover:text-oro disabled:opacity-25"
+                          title={`Bajar ${p.nombre || 'este puesto'}`}>
+                          <span aria-hidden>↓</span>
+                          <span className="sr-only">Bajar {p.nombre}</span>
+                        </button>
+                      </td>
+                    )}
+                    <td className="py-2 pr-3">
+                      <input type="text" value={p.nombre} className={ENTRADA}
+                        placeholder="Garzón, cocina, barra…" disabled={!editarPuestos}
+                        aria-label={`Nombre del puesto ${i + 1}`}
+                        onChange={(e) => cambiarPuesto(i, 'nombre', e.target.value)} />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <input type="number" min={0} step={1} className={ENTRADA}
+                        value={p.cadaCuantas || ''} placeholder="— sin regla"
+                        disabled={!editarPuestos}
+                        aria-label={`Uno cada cuántas personas en ${p.nombre || 'este puesto'}`}
+                        onChange={(e) => cambiarPuesto(i, 'cadaCuantas', e.target.value)} />
+                    </td>
+                    <td className="whitespace-nowrap py-2 text-right">
+                      {editarPuestos && (
+                        <button
+                          onClick={() => { setPuestos(puestos.filter((_, k) => k !== i)); setSucio(true); }}
+                          className="text-hueso/60 hover:text-rojo-texto">Quitar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {editarPuestos && (
+              <button
+                onClick={() => { setPuestos([...puestos, { nombre: '', cadaCuantas: 0 }]); setSucio(true); }}
+                className="boton">
+                Agregar puesto
+              </button>
+            )}
+            <span className="flex-1" />
+            <button onClick={() => setVerPuestos(false)}
+              className="boton">
+              Cerrar
+            </button>
+            {/* Guarda las dos listas, como siempre: es una sola petición y
+                un solo botón de guardar en toda la pantalla. */}
+            {editarPuestos && (
+              <BotonGuardar sucio={sucio} guardando={guardando} onClick={guardar} />
+            )}
+          </div>
+        </Dialogo>
+      )}
+    </section>
+  );
+}

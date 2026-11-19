@@ -1,0 +1,162 @@
+/**
+ * **Cómo se ingresa una reserva en Fudo** (2026-11-11, lo pidió el cliente).
+ *
+ * Quien recibe a la gente —la anfitriona o el jefe de turno— abre la mesa en
+ * Fudo, que es donde se cobra. Lo que tiene que saber a primera vista es una
+ * sola cosa: **con qué precio la ingresa**.
+ *
+ * - **Ya pagó** (pago directo en Shopify, o una reserva marcada Pagada): se
+ *   ingresa como *pago directo*. No se le cobra el menú.
+ * - **Solo reserva / por pagar**: se cobra **el precio sin descuento**, el de
+ *   pagar en el local —Tradiciones a $49.000, no a $44.000—.
+ * - **Abonada**: ya dejó una parte; se cobra el resto.
+ * - **De una cotización**: el precio es el acordado, no el de la carta.
+ * - **Compró pago directo y no pagó**: es la señal de que la regla de medios
+ *   de pago de Shopify no aplicó. No se adivina: se avisa al jefe de turno.
+ *
+ * Es pura y la calcula el servidor, así la pantalla de la entrada recibe la
+ * instrucción ya armada y no los datos con que se arma.
+ */
+import type { Reserva } from './tipos.ts';
+import { ESTADO_PAGO, TIPO_PAGO, esManual } from './columnas.ts';
+import { liberaCupo } from './pagos.ts';
+import { desglosarMenu } from './shopify.ts';
+import type { Menu } from './menus.ts';
+import { estaRectificada, personasEfectivas, menuEfectivo, descuentoVigente, porAprobar, rechazado,
+         type Rectificacion } from './rectificacion.ts';
+import { leerAgregados, A_LA_CARTA } from './mesa.ts';
+
+export interface Ingreso {
+  /** verde ya pagó · ámbar se cobra · cielo abonó una parte · rojo ojo. */
+  tono: 'verde' | 'ambar' | 'cielo' | 'rojo';
+  titulo: string;
+  /** Una línea por menú, y lo que haga falta decir debajo. */
+  lineas: string[];
+}
+
+const pesos = (n: number) => '$' + Math.round(n).toLocaleString('es-CL');
+
+/** El menú de la carta, aunque la reserva lo diga con el "Menú" adelante. */
+const comparable = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/^menu\s+/, '').trim();
+const enCarta = (nombre: string, menus: Menu[]) =>
+  menus.find((m) => comparable(m.nombre) === comparable(nombre));
+
+/**
+ * **La gente que se sumó a la mesa** (2026-11-17, `mesa.ts`): se cobra
+ * aparte, sea cual sea el pago de la reserva. Un menú agregado, al precio del
+ * local —no pagó por adelantado—; *a la carta*, lo que consuma.
+ */
+function lineasAgregados(agregados: string | undefined, menus: Menu[]): string[] {
+  return leerAgregados(agregados).map((a) => {
+    if (a.menu === A_LA_CARTA) return `+ ${a.cantidad} a la carta · se cobra lo que consuman`;
+    const precio = enCarta(a.menu, menus)?.precioEnLocal ?? 0;
+    return precio > 0
+      ? `+ ${a.cantidad} × ${a.menu} a ${pesos(precio)} · agregado, se cobra aparte`
+      : `+ ${a.cantidad} × ${a.menu} · agregado, se cobra aparte`;
+  });
+}
+
+export function comoIngresar(
+  r: Pick<Reserva, 'id' | 'menu' | 'tipoPago' | 'estadoPago' | 'monto'>
+    & { abonado?: number | null; personas?: number; agregados?: string } & Rectificacion,
+  menus: Menu[],
+  deCotizacion = false
+): Ingreso | null {
+  if (liberaCupo(r.estadoPago)) return null;
+  const estado = String(r.estadoPago || '').trim().toLowerCase();
+  // **Lo rectificado manda** (2026-11-12): los menús que de verdad se
+  // sirvieron, las personas que llegaron y el descuento ya aprobado.
+  const rectificada = estaRectificada(r);
+  const platos = desglosarMenu(menuEfectivo(r), menus);
+  const reservadas = Number(r.personas) || 0;
+  const reales = personasEfectivas({ personas: reservadas, ...r });
+  const dif = rectificada ? reales - reservadas : 0;
+  const desc = descuentoVigente(r);
+  const pedido = Number(r.descuento) || 0;
+  const notasRect: string[] = !rectificada ? [] : [
+    ...(dif !== 0 ? [`✎ Rectificada: ${reservadas} → ${reales} personas`] : []),
+    ...(porAprobar(r) && pedido > 0 ? [`Descuento de ${pedido}% por aprobar: no lo ingreses todavía.`] : []),
+    ...(rechazado(r) && pedido > 0 ? [`El descuento de ${pedido}% no fue aprobado.`] : [])
+  ];
+  const conDescuento = (total: number) => desc > 0 ? Math.round(total * (1 - desc / 100)) : total;
+  const deShopify = !deCotizacion && !esManual(r.id);
+  const directo = deShopify && r.tipoPago === TIPO_PAGO.directo;
+
+  if (estado === ESTADO_PAGO.pagado) {
+    return {
+      tono: 'verde',
+      titulo: 'Ya pagó · ingrésalo como pago directo',
+      lineas: [
+        ...platos.map((p) => `${p.cantidad} × ${p.menu} · pago directo`),
+        ...notasRect,
+        ...(dif > 0 ? [`Llegaron ${dif} más de lo pagado: cóbralos aparte a precio del local.`] : []),
+        ...(dif < 0 ? [`Llegaron ${-dif} menos: lo pagado no se devuelve desde acá, avísale a quien paga.`] : []),
+        ...(desc > 0 ? [`Descuento −${desc}% sobre lo que se cobre aparte.`] : []),
+        ...lineasAgregados(r.agregados, menus),
+        'No se le cobra el menú: lo que consuma aparte, sí.'
+      ]
+    };
+  }
+
+  if (directo) {
+    return {
+      tono: 'rojo',
+      titulo: 'Compró pago directo pero no aparece pagado',
+      lineas: ['Antes de abrir la mesa, avísale al jefe de turno: no la ingreses todavía.']
+    };
+  }
+
+  // Lo que hay que cobrar del menú: el acordado en una cotización, o el
+  // precio sin descuento de cada menú.
+  const conPrecio = platos.map((p) => {
+    const m = enCarta(p.menu, menus);
+    return { ...p, precio: m?.precioEnLocal ?? 0 };
+  });
+  const todosConPrecio = conPrecio.length > 0 && conPrecio.every((p) => p.precio > 0);
+  const deCarta = conPrecio.reduce((n, p) => n + p.cantidad * p.precio, 0);
+  // De una cotización, si cambió la gente se cobra lo acordado por persona.
+  const porPersona = deCotizacion && reservadas > 0 && (r.monto ?? 0) > 0 ? (r.monto ?? 0) / reservadas : 0;
+  const lineasMenu = deCotizacion
+    ? [...platos.map((p) => `${p.cantidad} × ${p.menu}`),
+       ...(dif !== 0 && porPersona > 0 ? [`Acordado por persona: ${pesos(porPersona)} × ${reales}`] : [])]
+    : conPrecio.map((p) => p.precio > 0
+      ? `${p.cantidad} × ${p.menu} a ${pesos(p.precio)} · sin descuento`
+      : `${p.cantidad} × ${p.menu} · sin precio en Productos`);
+  const bruto = deCotizacion
+    ? (dif !== 0 && porPersona > 0 ? Math.round(porPersona * reales) : (r.monto ?? 0))
+    : todosConPrecio ? deCarta : (r.monto ?? 0);
+  const total = conDescuento(bruto);
+  const lineaDescuento = desc > 0 && bruto > 0 ? [`Descuento −${desc}%: −${pesos(bruto - total)}`] : [];
+
+  if (estado === ESTADO_PAGO.abonado) {
+    const abonado = r.abonado ?? 0;
+    const resto = total > 0 && abonado > 0 ? Math.max(0, total - abonado) : 0;
+    return {
+      tono: 'cielo',
+      titulo: abonado > 0 ? `Abonó ${pesos(abonado)} · cobra el resto` : 'Abonó una parte · cobra el resto',
+      lineas: [
+        ...lineasMenu,
+        ...notasRect,
+        ...lineaDescuento,
+        resto > 0 ? `Falta por cobrar: ${pesos(resto)}` : 'Pregúntale al jefe de turno cuánto falta.',
+        ...lineasAgregados(r.agregados, menus)
+      ]
+    };
+  }
+
+  return {
+    tono: 'ambar',
+    titulo: deCotizacion ? 'Por pagar · precio de la cotización'
+      : deShopify ? 'Solo reserva · cobra el precio sin descuento'
+      : 'Por pagar · cobra el precio sin descuento',
+    lineas: [
+      ...lineasMenu,
+      ...notasRect,
+      ...lineaDescuento,
+      ...(total > 0 ? [`Total a cobrar: ${pesos(total)}`] : []),
+      ...(deCotizacion ? ['Es lo acordado en la cotización, no el precio de la carta.'] : []),
+      ...lineasAgregados(r.agregados, menus)
+    ]
+  };
+}
