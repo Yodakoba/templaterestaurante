@@ -17,6 +17,31 @@ archivo HTML con su CSS inline**, pero **ya no es autocontenido**: desde el
 Desde el 2026-09-16 los dos entregables se publican además **en inglés y en
 portugués**, generados desde el español. Ver "Sitio en tres idiomas".
 
+## La cultura de trabajo (2026-11-23)
+
+Esta plantilla trae la cultura de trabajo del proyecto original, para que cada
+proyecto que parta de acá la tenga desde el primer chat:
+
+- **La conducta que vale siempre** vive en `cultura/CLAUDE-usuario.md` y se
+  carga con la línea de abajo: @cultura/CLAUDE-usuario.md
+- **Tres skills** viven en `.claude/skills/` y Claude Code los carga solo. Se
+  usan **sin que el cliente lo pida**:
+  - Al terminar un cambio, al abrir un PR, cuando el cliente diga *"regla:"* o
+    *"mergea"* → skill `ritual-de-trabajo`.
+  - Al diseñar o cambiar una pantalla, ventana, ficha, lista o formulario de
+    un panel (`panel/`) → skill `panel-playstation`.
+  - Al tocar una página del sitio, un landing, el calendario de reserva o las
+    traducciones → skill `sitio-elegante`.
+  - Al cerrar una etapa, al empezar un chat nuevo, o cuando el cliente hable de
+    migrar, lanzar, mudar o pasar a producción → skill `traspaso-y-guias`
+    (cómo se mantiene `TRASPASO.md` y cuándo se arma una guía paso a paso).
+- **Al partir un proyecto nuevo desde esta plantilla, preguntarle al cliente
+  si quiere usar esta cultura de trabajo.** Si dice que no, se borran
+  `.claude/skills/` y `cultura/` y esta sección.
+- **Todo lo demás de este archivo es del proyecto original** (Brasas de Lo
+  Pirque): precios, Shopify, dominio, cotizaciones, equipo. En un proyecto
+  nuevo se reemplaza por lo propio y no se arrastra.
+
 ## Reglas fijas: se revisan antes de cada cambio
 
 Valen siempre, sin que el cliente tenga que recordarlas. **Cuando el
