@@ -32,6 +32,9 @@ proyecto que parta de acá la tenga desde el primer chat:
     un panel (`panel/`) → skill `panel-playstation`.
   - Al tocar una página del sitio, un landing, el calendario de reserva o las
     traducciones → skill `sitio-elegante`.
+  - Al cerrar una etapa, al empezar un chat nuevo, o cuando el cliente hable de
+    migrar, lanzar, mudar o pasar a producción → skill `traspaso-y-guias`
+    (cómo se mantiene `TRASPASO.md` y cuándo se arma una guía paso a paso).
 - **Al partir un proyecto nuevo desde esta plantilla, preguntarle al cliente
   si quiere usar esta cultura de trabajo.** Si dice que no, se borran
   `.claude/skills/` y `cultura/` y esta sección.
